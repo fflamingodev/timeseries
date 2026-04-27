@@ -1,0 +1,32 @@
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+*.test
+coverage.out
+coverage.html
+*.prof
+*.trace
+
+# IDE / editor scratch
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS scratch
+.DS_Store
+Thumbs.db
+
+# Local env / secrets
+.env
+.env.local
+
+# Build / vendor (we don't vendor by default)
+/bin/
+/dist/
+/vendor/

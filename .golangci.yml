@@ -1,0 +1,38 @@
+# Minimal golangci-lint config — focused on correctness and style
+# bugs that real reviewers would flag, no opinionated extras that
+# would bikeshed every PR.
+
+run:
+  timeout: 3m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck     # unchecked errors
+    - gofmt        # formatting
+    - goimports    # import order
+    - gosimple     # simplifications
+    - govet        # standard go vet
+    - ineffassign  # ineffective assignments
+    - misspell     # English spelling
+    - staticcheck  # broad static analysis
+    - unconvert    # redundant conversions
+    - unused       # unused identifiers
+
+linters-settings:
+  errcheck:
+    # Common stdlib functions we knowingly ignore: print* family,
+    # closing operations on best-effort cleanup.
+    exclude-functions:
+      - (io.Closer).Close
+      - (*strings.Builder).WriteString
+      - (*strings.Builder).WriteByte
+      - fmt.Fprintf
+      - fmt.Fprintln
+      - fmt.Fprint
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
