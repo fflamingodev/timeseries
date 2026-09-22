@@ -2,4 +2,6 @@ module usefulrisk.com/timeseries
 
 go 1.26
 
-require github.com/google/uuid v1.6.0
+// v0.1.0 changed the NaV semantics: NaV propagates through Add/Sub, and
+// plain NaN is silently skipped by aggregates. Use v0.2.0 or later.
+retract v0.1.0
