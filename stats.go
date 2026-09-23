@@ -46,14 +46,15 @@ type BasicStats struct {
 	Chmed  time.Time
 	Chmean time.Time
 
-	// Chstd is the dispersion of the timestamps, expressed as a
-	// time.Time counted from the zero time: the deviation is
-	// time.Time{}.Sub(Chstd). This encoding is kept from the previous
-	// version of the library, where the field existed but was never
-	// filled.
+	// Chstd is the dispersion of the timestamps themselves, expressed as
+	// a time.Time counted from the zero time: the deviation is
+	// Chstd.Sub(time.Time{}). The encoding is inherited from the
+	// previous version of the library, where the field was declared but
+	// never filled; it is computed now.
 	//
-	// Deprecated: read DChstd instead, which states the regularity of
-	// the sampling in plain nanoseconds.
+	// It answers "how spread out are the points over the window", which
+	// is a different question from DChstd's "how regular is the
+	// sampling".
 	Chstd time.Time
 
 	// The measurements: extremes with the instants they occur at,
