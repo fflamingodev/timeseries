@@ -20,6 +20,12 @@ func at(h int) time.Time {
 	return origin.Add(time.Duration(h) * time.Hour)
 }
 
+// atMinute returns the instant m minutes after the origin, for the
+// tests that need a logger drifting off the hour.
+func atMinute(m int) time.Time {
+	return origin.Add(time.Duration(m) * time.Minute)
+}
+
 // sameFloat compares two measurements by category, since no NaN — NaV
 // included — is ever equal to itself.
 func sameFloat(a, b float64) bool {

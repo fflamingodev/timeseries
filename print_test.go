@@ -29,36 +29,61 @@ func TestWalkthrough(t *testing.T) {
 
 	// --- 1. Build ------------------------------------------------------
 	//
-	// An outdoor temperature, read every hour. The sensor went offline
-	// at hours 7 and 8, hour 12 is missing too, and hour 15 carries the
-	// result of a division by zero made upstream.
-	readings := []float64{
-		nav.NaV, // the sensor is not online yet at midnight
-		12.1, 11.8, 11.5, 11.9, 13.2, 15.1,
-		nav.NaV, nav.NaV, // offline
-		19.8, 21.3, 22.0,
-		nav.NaV, // one lost reading
-		21.4, 20.2,
-		math.NaN(), // a broken computation upstream
-		17.6, 16.1, 14.9, 13.7,
+	// An outdoor temperature, logged about every hour — about, because a
+	// logger is not a metronome: its ticks drift by a few minutes, which
+	// is what the interval statistics are there to reveal. The minutes
+	// below are counted from midnight.
+	//
+	// The sensor is not online yet at midnight, goes offline again
+	// around 07:00 and 08:00, one reading is lost around noon, and one
+	// carries the result of a division by zero made upstream.
+	readings := []struct {
+		minute int
+		value  float64
+	}{
+		{0, nav.NaV}, // not online yet
+		{57, 12.1},
+		{123, 11.8},
+		{180, 11.5},
+		{241, 11.9},
+		{297, 13.2}, // this one will arrive late
+		{360, 15.1},
+		{422, nav.NaV}, // offline
+		{480, nav.NaV},
+		{541, 19.8},
+		{600, 21.3},
+		{658, 22.0},
+		{720, nav.NaV}, // lost reading
+		{783, 21.4},
+		{840, 20.2},
+		{899, math.NaN()}, // broken upstream
+		{960, 17.6},
+		{1021, 16.1},
+		{1080, 14.9},
+		{1140, 13.7},
 	}
+	const late = 5 // index of the reading that arrives out of order
 
 	ts := NewTimeSeries("Outdoor temperature")
 	ts.ID = NewID()
-	ts.Comment = "hourly readings; sensor offline at midnight and between 07:00 and 09:00"
+	ts.Comment = "logged roughly hourly; sensor offline at midnight and around 07:00-08:00"
 
-	// Everything but hour 5, which arrives late, on purpose.
+	// The ordinary way to load a series: hand the whole batch over at
+	// once. Add would give the same result, at a quadratic cost.
 	batch := make([]Datum, 0, len(readings))
-	for h, v := range readings {
-		if h == 5 {
+	for i, r := range readings {
+		if i == late {
 			continue
 		}
-		batch = append(batch, NewDatum(at(h), v))
+		batch = append(batch, NewDatum(atMinute(r.minute), r.value))
 	}
 	ts.AddAll(batch)
 
 	// --- 2. The late arrival -------------------------------------------
-	ts.Add(NewDatum(at(5), readings[5]))
+	//
+	// One reading reaches us after the others, and belongs in the
+	// middle. Add places it and fixes the two intervals it sits between.
+	ts.Add(NewDatum(atMinute(readings[late].minute), readings[late].value))
 
 	if ts.Len() != len(readings) {
 		t.Fatalf("Len = %d, want %d", ts.Len(), len(readings))
@@ -127,14 +152,14 @@ func TestWalkthrough(t *testing.T) {
 		t.Errorf("NbreOfNaV = %d, want 4", bs.NbreOfNaV)
 	}
 
-	// The window opens at midnight on a gap; the data starts an hour
-	// later. Confusing the two would misdate the series.
-	if !bs.Chmin.Equal(at(0)) || !nav.IsNaV(bs.ValAtChmin) {
-		t.Errorf("the window should open at hour 0 on a gap, got %s measuring %s",
+	// The window opens at midnight on a gap; the data starts at 00:57.
+	// Confusing the two would misdate the series.
+	if !bs.Chmin.Equal(atMinute(0)) || !nav.IsNaV(bs.ValAtChmin) {
+		t.Errorf("the window should open at midnight on a gap, got %s measuring %s",
 			bs.Chmin.Format("15:04"), nav.Format(bs.ValAtChmin))
 	}
-	if !bs.ChFirstUsable.Equal(at(1)) || bs.ValAtFirstUsable != 12.1 {
-		t.Errorf("first usable = %s measuring %s, want hour 1 measuring 12.1",
+	if !bs.ChFirstUsable.Equal(atMinute(57)) || bs.ValAtFirstUsable != 12.1 {
+		t.Errorf("first usable = %s measuring %s, want 00:57 measuring 12.1",
 			bs.ChFirstUsable.Format("15:04"), nav.Format(bs.ValAtFirstUsable))
 	}
 	if errs := bs.NbreOfNaN - bs.NbreOfNaV; errs != 1 {
@@ -150,11 +175,31 @@ func TestWalkthrough(t *testing.T) {
 			nav.Format(bs.Msmean))
 	}
 	// ... and nothing else. The clock is untouched.
-	if bs.DChmin != time.Hour || bs.DChmax != time.Hour {
-		t.Errorf("intervals = [%v, %v], want an hour throughout", bs.DChmin, bs.DChmax)
-	}
-	if !bs.Chmin.Equal(at(0)) || !bs.Chmax.Equal(at(19)) {
+	if !bs.Chmin.Equal(atMinute(0)) || !bs.Chmax.Equal(atMinute(1140)) {
 		t.Error("the extent of the series is wrong")
+	}
+
+	// The drifting logger, read back from the intervals. The shortest
+	// gap ends on the reading that arrived late, which is the proof that
+	// inserting it in the middle recomputed both of its neighbours.
+	if bs.DChmin != 56*time.Minute || !bs.ChAtDChmin.Equal(atMinute(297)) {
+		t.Errorf("shortest interval = %v ending at %s, want 56m ending at 04:57",
+			bs.DChmin, bs.ChAtDChmin.Format("15:04"))
+	}
+	if bs.DChmax != 66*time.Minute || !bs.ChAtDchmax.Equal(atMinute(123)) {
+		t.Errorf("longest interval = %v ending at %s, want 1h6m ending at 02:03",
+			bs.DChmax, bs.ChAtDchmax.Format("15:04"))
+	}
+	// Nineteen intervals spanning 1140 minutes: exactly an hour on
+	// average, although not one of them is an hour.
+	if bs.DChmean != float64(time.Hour) {
+		t.Errorf("mean interval = %v, want exactly 1h", time.Duration(bs.DChmean))
+	}
+	// And that is what DChstd is for: the average hides the drift, the
+	// dispersion shows it.
+	if bs.DChstd <= 0 {
+		t.Errorf("interval dispersion = %v, want a positive value on a drifting logger",
+			time.Duration(bs.DChstd))
 	}
 
 	// Dropping the error gives an honest mean over the sixteen readings
