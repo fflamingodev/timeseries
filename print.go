@@ -204,10 +204,10 @@ func (bs BasicStats) Fprint(w io.Writer, title string) {
 		formatTime(bs.Chmin), nav.Format(bs.ValAtChmin))
 	fmt.Fprintf(tw, "  last point (Chmax)\t%v\tmeasuring (ValAtChmax)\t%v\t\n",
 		formatTime(bs.Chmax), nav.Format(bs.ValAtChmax))
+	fmt.Fprintf(tw, "  first usable (ChFirstUsable)\t%v\tmeasuring (ValAtFirstUsable)\t%v\t\n",
+		formatTime(bs.ChFirstUsable), nav.Format(bs.ValAtFirstUsable))
 	fmt.Fprintf(tw, "  mean instant (Chmean)\t%v\t\t\t\n", formatTime(bs.Chmean))
 	fmt.Fprintf(tw, "  median instant (Chmed)\t%v\t\t\t\n", formatTime(bs.Chmed))
-	fmt.Fprintf(tw, "  spread over the span (Chstd)\t%v\t\t\t\n",
-		formatDuration(bs.Chstd.Sub(time.Time{})))
 
 	fmt.Fprintln(tw, "\nWHAT — the measurements\t\t\t")
 	fmt.Fprintf(tw, "  lowest (Msmin)\t%v\tmeasured at (ChAtMsmin)\t%v\t\n",

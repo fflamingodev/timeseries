@@ -33,7 +33,8 @@ func TestWalkthrough(t *testing.T) {
 	// at hours 7 and 8, hour 12 is missing too, and hour 15 carries the
 	// result of a division by zero made upstream.
 	readings := []float64{
-		12.4, 12.1, 11.8, 11.5, 11.9, 13.2, 15.1,
+		nav.NaV, // the sensor is not online yet at midnight
+		12.1, 11.8, 11.5, 11.9, 13.2, 15.1,
 		nav.NaV, nav.NaV, // offline
 		19.8, 21.3, 22.0,
 		nav.NaV, // one lost reading
@@ -44,7 +45,7 @@ func TestWalkthrough(t *testing.T) {
 
 	ts := NewTimeSeries("Outdoor temperature")
 	ts.ID = NewID()
-	ts.Comment = "hourly readings, sensor offline between 07:00 and 09:00"
+	ts.Comment = "hourly readings; sensor offline at midnight and between 07:00 and 09:00"
 
 	// Everything but hour 5, which arrives late, on purpose.
 	batch := make([]Datum, 0, len(readings))
@@ -121,9 +122,20 @@ func TestWalkthrough(t *testing.T) {
 		t.Error("a zero time was printed as a date instead of a dash")
 	}
 
-	// Three gaps, one error.
-	if bs.NbreOfNaV != 3 {
-		t.Errorf("NbreOfNaV = %d, want 3", bs.NbreOfNaV)
+	// Four gaps, one error.
+	if bs.NbreOfNaV != 4 {
+		t.Errorf("NbreOfNaV = %d, want 4", bs.NbreOfNaV)
+	}
+
+	// The window opens at midnight on a gap; the data starts an hour
+	// later. Confusing the two would misdate the series.
+	if !bs.Chmin.Equal(at(0)) || !nav.IsNaV(bs.ValAtChmin) {
+		t.Errorf("the window should open at hour 0 on a gap, got %s measuring %s",
+			bs.Chmin.Format("15:04"), nav.Format(bs.ValAtChmin))
+	}
+	if !bs.ChFirstUsable.Equal(at(1)) || bs.ValAtFirstUsable != 12.1 {
+		t.Errorf("first usable = %s measuring %s, want hour 1 measuring 12.1",
+			bs.ChFirstUsable.Format("15:04"), nav.Format(bs.ValAtFirstUsable))
 	}
 	if errs := bs.NbreOfNaN - bs.NbreOfNaV; errs != 1 {
 		t.Errorf("errors = %d, want 1", errs)

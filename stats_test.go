@@ -92,6 +92,71 @@ func TestStatsOnTheExtent(t *testing.T) {
 	}
 }
 
+// Chmin is where the window opens; ChFirstUsable is where the data
+// starts. On a feed whose sensor was still offline at the beginning,
+// the two differ, and confusing them misdates the whole series.
+func TestStatsFirstUsableMeasurement(t *testing.T) {
+	cases := []struct {
+		name      string
+		meas      []float64
+		wantHour  int // -1 when nothing is usable
+		wantValue float64
+	}{
+		{"the series starts with a measurement", []float64{10, 20, 30}, 0, 10},
+		{"the sensor was still offline", []float64{nav.NaV, nav.NaV, 5, 7}, 2, 5},
+		// An error is not a usable measurement either.
+		{"a broken value comes first", []float64{math.NaN(), 5}, 1, 5},
+		{"nothing usable at all", []float64{nav.NaV, nav.NaV}, -1, 0},
+	}
+	for _, c := range cases {
+		bs := statsOf(c.meas...)
+
+		if c.wantHour < 0 {
+			if !bs.ChFirstUsable.IsZero() {
+				t.Errorf("%s: ChFirstUsable = %s, want the zero time",
+					c.name, bs.ChFirstUsable.Format("15:04"))
+			}
+			isNaV(t, c.name+": ValAtFirstUsable", bs.ValAtFirstUsable)
+			continue
+		}
+		if !bs.ChFirstUsable.Equal(at(c.wantHour)) {
+			t.Errorf("%s: ChFirstUsable = %s, want hour %d",
+				c.name, bs.ChFirstUsable.Format("15:04"), c.wantHour)
+		}
+		eq(t, c.name+": ValAtFirstUsable", bs.ValAtFirstUsable, c.wantValue)
+	}
+}
+
+// The first usable measurement is a fact about one point, so a broken
+// value further along the series must not erase it — unlike the
+// aggregates, which it rightly poisons.
+func TestStatsFirstUsableSurvivesAnErrorFurtherOn(t *testing.T) {
+	bs := statsOf(10, math.NaN(), 30)
+
+	if !bs.ChFirstUsable.Equal(at(0)) {
+		t.Errorf("ChFirstUsable = %s, want hour 0", bs.ChFirstUsable.Format("15:04"))
+	}
+	eq(t, "ValAtFirstUsable", bs.ValAtFirstUsable, 10)
+	if !math.IsNaN(bs.Msmean) {
+		t.Error("Msmean should still be poisoned by the error")
+	}
+}
+
+// The first point of a series may itself be missing: Chmin then dates a
+// gap, and ValAtChmin says so.
+func TestStatsFirstPointMayBeMissing(t *testing.T) {
+	bs := statsOf(nav.NaV, 20, 30)
+
+	if !bs.Chmin.Equal(at(0)) {
+		t.Errorf("Chmin = %s, want hour 0: the window opens on the gap", bs.Chmin.Format("15:04"))
+	}
+	isNaV(t, "ValAtChmin", bs.ValAtChmin)
+	if !bs.ChFirstUsable.Equal(at(1)) {
+		t.Errorf("ChFirstUsable = %s, want hour 1", bs.ChFirstUsable.Format("15:04"))
+	}
+	eq(t, "ValAtFirstUsable", bs.ValAtFirstUsable, 20)
+}
+
 func TestStatsOnTheIntervals(t *testing.T) {
 	bs := referenceSeries().Stats()
 

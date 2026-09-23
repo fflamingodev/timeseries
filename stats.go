@@ -46,16 +46,17 @@ type BasicStats struct {
 	Chmed  time.Time
 	Chmean time.Time
 
-	// Chstd is the dispersion of the timestamps themselves, expressed as
-	// a time.Time counted from the zero time: the deviation is
-	// Chstd.Sub(time.Time{}). The encoding is inherited from the
-	// previous version of the library, where the field was declared but
-	// never filled; it is computed now.
+	// The first point actually carrying a measurement, and that
+	// measurement. On a feed that starts before the sensor warms up, or
+	// after an outage, Chmin is the start of the window while
+	// ChFirstUsable is the start of the data.
 	//
-	// It answers "how spread out are the points over the window", which
-	// is a different question from DChstd's "how regular is the
-	// sampling".
-	Chstd time.Time
+	// Unlike the aggregates, these two are unaffected by a broken value
+	// elsewhere in the series: they state a fact about one point, not a
+	// computation over all of them. Both are the zero time and NaV when
+	// no measurement is usable.
+	ChFirstUsable    time.Time
+	ValAtFirstUsable float64
 
 	// The measurements: extremes with the instants they occur at,
 	// then the usual three.
@@ -133,6 +134,7 @@ func (ts *TimeSeries) Stats() BasicStats {
 // that would pass for a measurement.
 func (bs *BasicStats) nothingToSay() {
 	bs.ValAtChmin, bs.ValAtChmax = nav.NaV, nav.NaV
+	bs.ValAtFirstUsable = nav.NaV
 	bs.Msmin, bs.Msmax = nav.NaV, nav.NaV
 	bs.Msmean, bs.Msmed, bs.Msstd = nav.NaV, nav.NaV, nav.NaV
 	bs.DChmin, bs.DChmax = NaDuration, NaDuration
@@ -159,8 +161,6 @@ func (ts *TimeSeries) statsOnChron(bs *BasicStats) {
 
 	bs.Chmean = offsetToTime(base, nav.Mean(offsets))
 	bs.Chmed = offsetToTime(base, nav.Median(offsets))
-	// Kept for compatibility: a dispersion encoded as an instant.
-	bs.Chstd = offsetToTime(time.Time{}, nav.StdDev(offsets))
 }
 
 // offsetToTime turns a number of nanoseconds counted from base back
@@ -190,6 +190,17 @@ func (ts *TimeSeries) statsOnMeas(bs *BasicStats) {
 
 	bs.ChAtMsmin = ts.firstInstantOf(bs.Msmin)
 	bs.ChAtMsmax = ts.firstInstantOf(bs.Msmax)
+
+	// The first point that actually measured something. Looked up
+	// directly rather than derived from the aggregates, so that a broken
+	// value further along the series does not erase the fact.
+	ts.Range(func(_ int, du DataUnit) bool {
+		if du.Meas != du.Meas { // NaN-class: missing or broken
+			return true
+		}
+		bs.ChFirstUsable, bs.ValAtFirstUsable = du.Chron, du.Meas
+		return false
+	})
 }
 
 // firstInstantOf returns the instant of the earliest point measuring
