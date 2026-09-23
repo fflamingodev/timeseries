@@ -38,7 +38,7 @@ func isNaV(t *testing.T, field string, got float64) {
 // hand in the comments.
 func referenceSeries() *TimeSeries {
 	ts := NewTimeSeries("reference")
-	ts.AddAll([]Datum{
+	ts.AddBatchData([]Datum{
 		NewDatum(at(0), 10),
 		NewDatum(at(1), nav.NaV),
 		NewDatum(at(2), 30),
@@ -319,7 +319,7 @@ func TestStatsDateTheFirstOccurrenceOfAnExtreme(t *testing.T) {
 func TestStatsChronMeanIsExactToTheNanosecond(t *testing.T) {
 	base := time.Date(2026, 9, 23, 14, 30, 0, 0, time.UTC)
 	ts := NewTimeSeries("nanoseconds")
-	ts.AddAll([]Datum{
+	ts.AddBatchData([]Datum{
 		NewDatum(base, 1),
 		NewDatum(base.Add(2*time.Nanosecond), 2),
 		NewDatum(base.Add(4*time.Nanosecond), 3),

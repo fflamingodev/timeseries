@@ -23,9 +23,9 @@ func batch(hours ...int) []Datum {
 	return out
 }
 
-func TestAddAllInOrder(t *testing.T) {
+func TestAddBatchDataInOrder(t *testing.T) {
 	ts := NewTimeSeries("batch")
-	ts.AddAll(batch(0, 1, 2, 3))
+	ts.AddBatchData(batch(0, 1, 2, 3))
 
 	if ts.Len() != 4 {
 		t.Fatalf("Len = %d, want 4", ts.Len())
@@ -36,9 +36,9 @@ func TestAddAllInOrder(t *testing.T) {
 	}
 }
 
-func TestAddAllOutOfOrder(t *testing.T) {
+func TestAddBatchDataOutOfOrder(t *testing.T) {
 	ts := NewTimeSeries("shuffled batch")
-	ts.AddAll(batch(3, 0, 2, 1))
+	ts.AddBatchData(batch(3, 0, 2, 1))
 
 	checkInvariant(t, ts)
 	for i := 0; i < ts.Len(); i++ {
@@ -48,12 +48,12 @@ func TestAddAllOutOfOrder(t *testing.T) {
 	}
 }
 
-func TestAddAllOnEmptyInput(t *testing.T) {
+func TestAddBatchDataOnEmptyInput(t *testing.T) {
 	ts := seriesOf(1, 2)
 	before := ts.Len()
 
-	ts.AddAll(nil)
-	ts.AddAll([]Datum{})
+	ts.AddBatchData(nil)
+	ts.AddBatchData([]Datum{})
 
 	if ts.Len() != before {
 		t.Errorf("Len = %d, want %d", ts.Len(), before)
@@ -63,14 +63,14 @@ func TestAddAllOnEmptyInput(t *testing.T) {
 
 // A batch that extends the series, and one that reaches back before its
 // first point: both must leave the series correct.
-func TestAddAllOnAPopulatedSeries(t *testing.T) {
+func TestAddBatchDataOnAPopulatedSeries(t *testing.T) {
 	ts := NewTimeSeries("mixed")
-	ts.AddAll(batch(4, 6))
+	ts.AddBatchData(batch(4, 6))
 
-	ts.AddAll(batch(8, 7)) // after the end, in the wrong order
+	ts.AddBatchData(batch(8, 7)) // after the end, in the wrong order
 	checkInvariant(t, ts)
 
-	ts.AddAll(batch(1, 3)) // before the beginning
+	ts.AddBatchData(batch(1, 3)) // before the beginning
 	checkInvariant(t, ts)
 
 	wantHours := []int{1, 3, 4, 6, 7, 8}
@@ -88,10 +88,10 @@ func TestAddAllOnAPopulatedSeries(t *testing.T) {
 	}
 }
 
-// AddAll and Add must produce the very same series, points and deltas
+// AddBatchData and Add must produce the very same series, points and deltas
 // alike. Anything else would make the two methods two different
 // semantics wearing similar names.
-func TestAddAllAgreesWithAdd(t *testing.T) {
+func TestAddBatchDataAgreesWithAdd(t *testing.T) {
 	const n = 60
 	r := rand.New(rand.NewSource(11))
 
@@ -105,7 +105,7 @@ func TestAddAllAgreesWithAdd(t *testing.T) {
 		}
 
 		batched := NewTimeSeries("batched")
-		batched.AddAll(data)
+		batched.AddBatchData(data)
 
 		if oneByOne.Len() != batched.Len() {
 			t.Fatalf("round %d: Len %d vs %d", round, oneByOne.Len(), batched.Len())
@@ -114,7 +114,7 @@ func TestAddAllAgreesWithAdd(t *testing.T) {
 			a, b := oneByOne.At(i), batched.At(i)
 			if !a.Chron.Equal(b.Chron) || !sameFloat(a.Meas, b.Meas) ||
 				a.Dchron != b.Dchron || !sameFloat(a.Dmeas, b.Dmeas) {
-				t.Fatalf("round %d, point %d: Add gives {%s %s %v %s}, AddAll gives {%s %s %v %s}",
+				t.Fatalf("round %d, point %d: Add gives {%s %s %v %s}, AddBatchData gives {%s %s %v %s}",
 					round, i,
 					a.Chron.Format("15:04"), nav.Format(a.Meas), a.Dchron, nav.Format(a.Dmeas),
 					b.Chron.Format("15:04"), nav.Format(b.Meas), b.Dchron, nav.Format(b.Dmeas))
@@ -126,10 +126,10 @@ func TestAddAllAgreesWithAdd(t *testing.T) {
 
 // Points sharing an instant keep the order they were given, and land
 // after those already in the series.
-func TestAddAllKeepsTheOrderOfDuplicates(t *testing.T) {
+func TestAddBatchDataKeepsTheOrderOfDuplicates(t *testing.T) {
 	ts := NewTimeSeries("duplicates")
 	ts.Add(NewDatum(at(0), 1))
-	ts.AddAll([]Datum{
+	ts.AddBatchData([]Datum{
 		NewDatum(at(0), 2),
 		NewDatum(at(0), 3),
 	})
@@ -142,9 +142,9 @@ func TestAddAllKeepsTheOrderOfDuplicates(t *testing.T) {
 	}
 }
 
-func TestAddAllMissingValues(t *testing.T) {
+func TestAddBatchDataMissingValues(t *testing.T) {
 	ts := NewTimeSeries("gaps")
-	ts.AddAll([]Datum{
+	ts.AddBatchData([]Datum{
 		NewDatum(at(0), 10),
 		NewDatum(at(1), nav.NaV),
 		NewDatum(at(2), 14),
@@ -165,7 +165,7 @@ func TestAddAllMissingValues(t *testing.T) {
 //
 // Loading the same shuffled points, on an Apple M-series laptop:
 //
-//	points   Add one by one   AddAll
+//	points   Add one by one   AddBatchData
 //	20 000        61 ms        9.1 ms
 //	40 000       255 ms       20.6 ms
 //	80 000     1 014 ms       45.2 ms
@@ -173,7 +173,7 @@ func TestAddAllMissingValues(t *testing.T) {
 // Doubling the input quadruples the first and merely doubles the second:
 // shifting the tail on every insertion is quadratic, sorting once is
 // n·log n. Extrapolated to a million points, that is about two and a
-// half minutes against roughly one second — the whole reason AddAll
+// half minutes against roughly one second — the whole reason AddBatchData
 // exists.
 //
 // On an input already in order, both take the fast path and cost the
@@ -198,22 +198,22 @@ func orderedBatch(n int) []Datum {
 	return data
 }
 
-func BenchmarkAddAllShuffled(b *testing.B) {
+func BenchmarkAddBatchDataShuffled(b *testing.B) {
 	data := shuffledBatch(benchPoints)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ts := NewTimeSeries("bench")
-		ts.AddAll(data)
+		ts.AddBatchData(data)
 	}
 }
 
 // The ordered case takes the fast path: no sort at all.
-func BenchmarkAddAllOrdered(b *testing.B) {
+func BenchmarkAddBatchDataOrdered(b *testing.B) {
 	data := orderedBatch(benchPoints)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ts := NewTimeSeries("bench")
-		ts.AddAll(data)
+		ts.AddBatchData(data)
 	}
 }
 

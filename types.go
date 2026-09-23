@@ -116,8 +116,8 @@ func (du DataUnit) IsFirst() bool {
 //
 // At any moment, the points are sorted by Chron and every delta agrees
 // with the current order. The type has no "recompute the deltas" method
-// because there is never anything to recompute: Add maintains the
-// invariant as it inserts.
+// because there is never anything to recompute: Add and AddBatchData
+// maintain the invariant as they insert.
 //
 // This is why the points are not an exported field. Handing out the
 // slice would let a caller append out of order or sort by measurement,
@@ -234,7 +234,7 @@ func (ts *TimeSeries) Add(d Datum) {
 	fillDeltas(&ts.points[i+1], du)
 }
 
-// AddAll inserts a batch of measurements at once. It is the method to
+// AddBatchData inserts a batch of measurements at once. It is the method to
 // use when loading a series from a database, a file or an API — that is,
 // whenever the points are already in hand.
 //
@@ -243,7 +243,7 @@ func (ts *TimeSeries) Add(d Datum) {
 // batch arrives in. The cost is not. Add shifts the tail of the slice
 // for every point that belongs earlier, so loading a million points in
 // random order that way costs a million shifts — minutes instead of
-// milliseconds. AddAll appends everything, sorts once, and fills the
+// milliseconds. AddBatchData appends everything, sorts once, and fills the
 // deltas in a single pass.
 //
 // Points sharing an instant keep the order they were given, and land
@@ -253,7 +253,7 @@ func (ts *TimeSeries) Add(d Datum) {
 // If the batch happens to extend the series in order — the common case
 // of a query with ORDER BY — no sort takes place at all: only the new
 // points get their deltas.
-func (ts *TimeSeries) AddAll(data []Datum) {
+func (ts *TimeSeries) AddBatchData(data []Datum) {
 	if len(data) == 0 {
 		return
 	}

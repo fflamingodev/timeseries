@@ -99,7 +99,7 @@ func TestWalkthrough(t *testing.T) {
 		}
 		batch = append(batch, NewDatum(atMinute(r.minute), r.value))
 	}
-	ts.AddAll(batch)
+	ts.AddBatchData(batch)
 
 	// --- 2. The late arrival -------------------------------------------
 	//
@@ -255,7 +255,7 @@ func TestWalkthroughWithoutErrors(t *testing.T) {
 		}
 		batch = append(batch, NewDatum(atMinute(r.minute), r.value))
 	}
-	ts.AddAll(batch)
+	ts.AddBatchData(batch)
 	ts.Add(NewDatum(atMinute(readings[late].minute), readings[late].value))
 
 	checkInvariant(t, ts)
