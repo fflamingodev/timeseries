@@ -234,6 +234,79 @@ func (ts *TimeSeries) Add(d Datum) {
 	fillDeltas(&ts.points[i+1], du)
 }
 
+// AddAll inserts a batch of measurements at once. It is the method to
+// use when loading a series from a database, a file or an API — that is,
+// whenever the points are already in hand.
+//
+// The result is the same as calling Add on each Datum in turn: the
+// series ends up chronological, with exact deltas, whatever order the
+// batch arrives in. The cost is not. Add shifts the tail of the slice
+// for every point that belongs earlier, so loading a million points in
+// random order that way costs a million shifts — minutes instead of
+// milliseconds. AddAll appends everything, sorts once, and fills the
+// deltas in a single pass.
+//
+// Points sharing an instant keep the order they were given, and land
+// after any point already in the series bearing that same instant. This
+// is the rule Add follows too.
+//
+// If the batch happens to extend the series in order — the common case
+// of a query with ORDER BY — no sort takes place at all: only the new
+// points get their deltas.
+func (ts *TimeSeries) AddAll(data []Datum) {
+	if len(data) == 0 {
+		return
+	}
+
+	start := len(ts.points)
+	for _, d := range data {
+		ts.points = append(ts.points, DataUnit{Datum: d, Dchron: NaDuration, Dmeas: nav.NaV})
+	}
+
+	if isChronological(ts.points) {
+		// Nothing moved, so the deltas already in place still hold. Only
+		// the newcomers need theirs, starting with the one that now
+		// follows the former last point.
+		from := start
+		if from < 1 {
+			from = 1
+		}
+		ts.fillDeltasFrom(from)
+		return
+	}
+
+	// SliceStable and not Slice: points sharing an instant must keep the
+	// order they were given, and stay after the ones already there.
+	sort.SliceStable(ts.points, func(i, j int) bool {
+		return ts.points[i].Chron.Before(ts.points[j].Chron)
+	})
+	ts.fillDeltasFrom(1)
+}
+
+// isChronological reports whether the points are in non-decreasing
+// order of Chron.
+func isChronological(points []DataUnit) bool {
+	for i := 1; i < len(points); i++ {
+		if points[i].Chron.Before(points[i-1].Chron) {
+			return false
+		}
+	}
+	return true
+}
+
+// fillDeltasFrom recomputes the deltas of the points from index i
+// onwards, and makes sure the first point carries its sentinels.
+func (ts *TimeSeries) fillDeltasFrom(i int) {
+	if len(ts.points) == 0 {
+		return
+	}
+	ts.points[0].Dchron = NaDuration
+	ts.points[0].Dmeas = nav.NaV
+	for ; i < len(ts.points); i++ {
+		fillDeltas(&ts.points[i], ts.points[i-1])
+	}
+}
+
 // fillDeltas fills the deltas of du against its predecessor prev.
 //
 // Dmeas goes through notavalue.Sub rather than a plain subtraction: when
