@@ -109,12 +109,26 @@ func Mul(a, b float64) float64 {
 //
 //	Div(NaV, 5)   → NaV
 //	Div(5, NaV)   → NaV
+//	Div(NaV, 0)   → NaV
 //	Div(NaN, NaV) → NaN
 //
 // When neither operand is NaN-class, IEEE-754 applies unchanged: a
 // non-zero number divided by zero is ±Inf, and 0/0 is a plain NaN. The
 // latter is a computation error, not a missing value, so it is NOT a
 // NaV.
+//
+// # Why Div(NaV, 0) is NaV and not NaN
+//
+// The precedence of NaN over NaV applies to a NaN among the operands.
+// Here there is none: there is a missing value and an ordinary zero.
+// What the result would have been depends on what is missing — 5/0
+// would be +Inf, 0/0 would be NaN — so nothing can be asserted, and
+// that is precisely what NaV means. Calling it an error would claim a
+// computation went wrong, when in fact a measurement was never made.
+//
+// This is not a corner case: it is what makes Mean(nil) and
+// Mean([NaV, NaV]) return NaV rather than NaN, since Mean divides a sum
+// by a count that is then zero. An empty series is not a bug.
 func Div(a, b float64) float64 {
 	if IsStdNaN(a) || IsStdNaN(b) {
 		return math.NaN()

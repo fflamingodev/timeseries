@@ -18,4 +18,29 @@
 //
 // The rationale: one missing day must not turn a monthly mean into an
 // error, whereas a broken computation must never be silently hidden.
+//
+// # What the aggregates cost
+//
+// Skipping missing values must not make the library slow, because these
+// functions are meant to run over long series and over many of them.
+// So, as a rule, an aggregate reads its input once and allocates
+// nothing. Sum, Mean, Min, Max and Bounds all work that way, out of a
+// single shared traversal.
+//
+// Two exceptions, both deliberate:
+//
+//   - Median and Percentile must sort, so they copy the usable values
+//     first. The caller's series keeps its order, which matters: in a
+//     time series, order carries meaning.
+//   - StdDev reads the input twice, since the mean must be known before
+//     the deviations can be squared. It still copies nothing. The
+//     one-pass alternatives were measured and rejected; the reasons are
+//     in its documentation.
+//
+// Every one of these choices is backed by a benchmark kept in the
+// repository, in aggregates_bench_test.go, together with the rejected
+// alternatives and a test asserting that they all return the same
+// result. Run them with:
+//
+//	go test -run XXX -bench . -benchmem
 package timeseries
