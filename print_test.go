@@ -10,6 +10,53 @@ import (
 	nav "github.com/fflamingodev/notavalue"
 )
 
+// reading is one line of the log used by the walkthroughs: minutes
+// counted from midnight, and what the sensor reported.
+type reading struct {
+	minute int
+	value  float64
+}
+
+// late is the index, in the log below, of the reading that reaches us
+// out of order.
+const late = 5
+
+// driftingLog returns a day of hourly readings from a logger that is no
+// metronome: its ticks land 56 to 66 minutes apart, which is what the
+// interval statistics are there to reveal.
+//
+// The sensor is not online yet at midnight, goes offline again around
+// 07:00 and 08:00, and one reading is lost around noon: four gaps that
+// the library must step over rather than choke on.
+//
+// The reading at 14:59 is the caller's choice: pass math.NaN() to see
+// what a broken computation upstream does to the summary, or a plain
+// number for a log that only has gaps in it.
+func driftingLog(at1459 float64) []reading {
+	return []reading{
+		{0, nav.NaV}, // not online yet
+		{57, 12.1},
+		{123, 11.8},
+		{180, 11.5},
+		{241, 11.9},
+		{297, 13.2}, // arrives late
+		{360, 15.1},
+		{422, nav.NaV}, // offline
+		{480, nav.NaV},
+		{541, 19.8},
+		{600, 21.3},
+		{658, 22.0},
+		{720, nav.NaV}, // lost reading
+		{783, 21.4},
+		{840, 20.2},
+		{899, at1459},
+		{960, 17.6},
+		{1021, 16.1},
+		{1080, 14.9},
+		{1140, 13.7},
+	}
+}
+
 // TestWalkthrough goes the whole way: build a series of twenty points,
 // insert one of them out of order, leave gaps where the sensor was
 // offline, slip in one broken computation, then print the points and
@@ -37,32 +84,7 @@ func TestWalkthrough(t *testing.T) {
 	// The sensor is not online yet at midnight, goes offline again
 	// around 07:00 and 08:00, one reading is lost around noon, and one
 	// carries the result of a division by zero made upstream.
-	readings := []struct {
-		minute int
-		value  float64
-	}{
-		{0, nav.NaV}, // not online yet
-		{57, 12.1},
-		{123, 11.8},
-		{180, 11.5},
-		{241, 11.9},
-		{297, 13.2}, // this one will arrive late
-		{360, 15.1},
-		{422, nav.NaV}, // offline
-		{480, nav.NaV},
-		{541, 19.8},
-		{600, 21.3},
-		{658, 22.0},
-		{720, nav.NaV}, // lost reading
-		{783, 21.4},
-		{840, 20.2},
-		{899, math.NaN()}, // broken upstream
-		{960, 17.6},
-		{1021, 16.1},
-		{1080, 14.9},
-		{1140, 13.7},
-	}
-	const late = 5 // index of the reading that arrives out of order
+	readings := driftingLog(math.NaN()) // broken upstream at 14:59
 
 	ts := NewTimeSeries("Outdoor temperature")
 	ts.ID = NewID()
@@ -206,6 +228,104 @@ func TestWalkthrough(t *testing.T) {
 	// that exist.
 	if m := nav.Mean(clean); nav.IsNaV(m) || math.IsNaN(m) {
 		t.Errorf("mean without the error = %s, want a number", nav.Format(m))
+	}
+}
+
+// TestWalkthroughWithoutErrors is the same day of readings with nothing
+// broken in it — only the three gaps where the sensor was silent.
+//
+// This is the case the library is built for, and the one to read first:
+// every statistic of the measurements is a number, computed over the
+// sixteen readings that exist, and the three gaps cost nothing but
+// their own absence.
+//
+//	go test -run TestWalkthroughWithoutErrors -v
+func TestWalkthroughWithoutErrors(t *testing.T) {
+	var out bytes.Buffer
+
+	readings := driftingLog(18.9) // a real reading at 14:59 this time
+
+	ts := NewTimeSeries("Outdoor temperature, no error")
+	ts.Comment = "logged roughly hourly; sensor offline at midnight and around 07:00-08:00"
+
+	batch := make([]Datum, 0, len(readings))
+	for i, r := range readings {
+		if i == late {
+			continue
+		}
+		batch = append(batch, NewDatum(atMinute(r.minute), r.value))
+	}
+	ts.AddAll(batch)
+	ts.Add(NewDatum(atMinute(readings[late].minute), readings[late].value))
+
+	checkInvariant(t, ts)
+	ts.Fprint(&out)
+	ts.FprintStats(&out)
+	t.Log("\n" + out.String())
+
+	bs := ts.Stats()
+
+	// Twenty points, sixteen readings, four gaps, nothing broken. That
+	// NbreOfNaN equals NbreOfNaV is the statement: every non-number here
+	// is a gap, none is an error.
+	if bs.Len != 20 || bs.NbreOfNaV != 4 || bs.NbreOfNaN != 4 {
+		t.Errorf("Len = %d, missing = %d, non-numbers = %d; want 20, 4 and 4",
+			bs.Len, bs.NbreOfNaV, bs.NbreOfNaN)
+	}
+
+	// Every statistic of the measurements is now a statement about the
+	// data, which is the whole difference with the other walkthrough.
+	for _, c := range []struct {
+		name string
+		got  float64
+	}{
+		{"Msmin", bs.Msmin}, {"Msmax", bs.Msmax}, {"Msmean", bs.Msmean},
+		{"Msmed", bs.Msmed}, {"Msstd", bs.Msstd},
+		{"DMsmin", bs.DMsmin}, {"DMsmax", bs.DMsmax}, {"DMsmean", bs.DMsmean},
+		{"DMsmed", bs.DMsmed}, {"DMsstd", bs.DMsstd},
+	} {
+		if c.got != c.got { // NaN-class
+			t.Errorf("%s = %s, want a number: nothing is broken in this log",
+				c.name, nav.Format(c.got))
+		}
+	}
+
+	// The extremes, and when they happened.
+	if bs.Msmin != 11.5 || !bs.ChAtMsmin.Equal(atMinute(180)) {
+		t.Errorf("lowest = %s at %s, want 11.5 at 03:00",
+			nav.Format(bs.Msmin), bs.ChAtMsmin.Format("15:04"))
+	}
+	if bs.Msmax != 22 || !bs.ChAtMsmax.Equal(atMinute(658)) {
+		t.Errorf("highest = %s at %s, want 22 at 10:58",
+			nav.Format(bs.Msmax), bs.ChAtMsmax.Format("15:04"))
+	}
+
+	// The mean covers the sixteen readings that exist, not the twenty
+	// slots: 261.5 / 16. Counting the gaps as zero would give 13.075,
+	// and counting them as errors would give nothing at all.
+	if want := 261.5 / 16.0; math.Abs(bs.Msmean-want) > 1e-12 {
+		t.Errorf("mean = %s, want %v", nav.Format(bs.Msmean), want)
+	}
+	// Median of the sixteen sorted readings, lower of the two middles.
+	if bs.Msmed != 15.1 {
+		t.Errorf("median = %s, want 15.1", nav.Format(bs.Msmed))
+	}
+
+	// The measured day rose and fell: the largest single rise is bigger
+	// than the largest single fall.
+	if bs.DMsmax <= 0 || bs.DMsmin >= 0 {
+		t.Errorf("variations = [%s, %s], want a fall and a rise",
+			nav.Format(bs.DMsmin), nav.Format(bs.DMsmax))
+	}
+
+	printed := out.String()
+	// The header states the count; "NaN" appears there as a label, so
+	// the check is on the figure, not on the word.
+	if !strings.Contains(printed, "0 broken (NaN)") {
+		t.Errorf("the summary does not report a log free of errors:\n%s", printed)
+	}
+	if !strings.Contains(printed, "NaV") {
+		t.Error("the four gaps are not visible in the output")
 	}
 }
 
