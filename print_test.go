@@ -68,6 +68,21 @@ func TestWalkthrough(t *testing.T) {
 	ts.Fprint(&out)
 	ts.FprintStats(&out)
 
+	// --- 3b. The same series, once the broken value is called what it
+	// is: unknown. Marking an error as missing is what a cleaning step
+	// does, and it is what turns the Measure column back into
+	// statements about the data.
+	cleaned := NewTimeSeries(ts.Name + " (broken value marked as missing)")
+	ts.Range(func(_ int, du DataUnit) bool {
+		m := du.Meas
+		if nav.IsStdNaN(m) {
+			m = nav.NaV
+		}
+		cleaned.Add(NewDatum(du.Chron, m))
+		return true
+	})
+	cleaned.FprintStats(&out)
+
 	// --- 4. Compute on it ----------------------------------------------
 	meas := ts.Meas()
 	bs := ts.Stats()

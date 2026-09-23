@@ -172,43 +172,70 @@ func (ts *TimeSeries) FprintStats(w io.Writer) {
 }
 
 // Fprint writes the summary to w, under the given title.
+//
+// The table is laid out by subject rather than by statistic, because
+// the columns of the previous layout invited a confusion this one
+// prevents. "The series starts at 00:00, where 12.4 was measured" and
+// "the lowest reading, 11.5, was taken at 03:00" are two different
+// statements, and they now sit in two different sections, each value
+// next to the instant it belongs to.
 func (bs BasicStats) Fprint(w io.Writer, title string) {
-	fmt.Fprintln(w, "------------------------------------------------------------")
+	fmt.Fprintln(w, "================================================================")
 	if title != "" {
 		fmt.Fprintln(w, title)
 	}
-	fmt.Fprintf(w, "Points: %d", bs.Len)
-	if bs.NbreOfNaV > 0 || bs.NbreOfNaN > 0 {
-		fmt.Fprintf(w, "   Missing: %d   Errors: %d", bs.NbreOfNaV, bs.NbreOfNaN-bs.NbreOfNaV)
-	}
-	fmt.Fprintln(w)
 
-	tw := newTabWriter(w)
-	fmt.Fprintln(tw, " |\tChron|\tMeasure|\tDChron|\tDMeas|\t")
-	fmt.Fprintln(tw, "-------|\t------------------------|\t------------|\t------------------|\t------------|\t")
-	fmt.Fprintf(tw, "Min|\t%v|\t%v|\t%v|\t%v|\t\n",
-		formatTime(bs.Chmin), nav.Format(bs.Msmin), formatDuration(bs.DChmin), nav.Format(bs.DMsmin))
-	fmt.Fprintf(tw, "Max|\t%v|\t%v|\t%v|\t%v|\t\n",
-		formatTime(bs.Chmax), nav.Format(bs.Msmax), formatDuration(bs.DChmax), nav.Format(bs.DMsmax))
-	fmt.Fprintf(tw, "Mean|\t%v|\t%v|\t%v|\t%v|\t\n",
-		formatTime(bs.Chmean), nav.Format(bs.Msmean), formatNanos(bs.DChmean), nav.Format(bs.DMsmean))
-	fmt.Fprintf(tw, "Median|\t%v|\t%v|\t%v|\t%v|\t\n",
-		formatTime(bs.Chmed), nav.Format(bs.Msmed), formatNanos(bs.DChmed), nav.Format(bs.DMsmed))
-	// Chstd holds a dispersion encoded as an instant counted from the
-	// zero time; printed as a date it reads as a year 1 timestamp, which
-	// means nothing. Shown as the duration it is.
-	fmt.Fprintf(tw, "StdDev|\t%v|\t%v|\t%v|\t%v|\t\n",
-		formatDuration(bs.Chstd.Sub(time.Time{})), nav.Format(bs.Msstd),
-		formatNanos(bs.DChstd), nav.Format(bs.DMsstd))
+	usable := bs.Len - bs.NbreOfNaN
+	errors := bs.NbreOfNaN - bs.NbreOfNaV
+	fmt.Fprintf(w, "%d points   %d usable   %d missing (NaV)   %d broken (NaN)\n",
+		bs.Len, usable, bs.NbreOfNaV, errors)
+	if errors > 0 {
+		fmt.Fprintln(w, "A broken measurement propagates: every statistic below that")
+		fmt.Fprintln(w, "depends on the measurements is NaN, on purpose.")
+	}
+
+	// Left-aligned here: these rows are labelled statements, not columns
+	// of figures to compare down the page.
+	tw := new(tabwriter.Writer)
+	tw.Init(w, 2, 0, 2, ' ', 0)
+
+	fmt.Fprintln(tw, "\nWHEN — the span of the series\t\t\t")
+	fmt.Fprintf(tw, "  first point (Chmin)\t%v\tmeasuring (ValAtChmin)\t%v\t\n",
+		formatTime(bs.Chmin), nav.Format(bs.ValAtChmin))
+	fmt.Fprintf(tw, "  last point (Chmax)\t%v\tmeasuring (ValAtChmax)\t%v\t\n",
+		formatTime(bs.Chmax), nav.Format(bs.ValAtChmax))
+	fmt.Fprintf(tw, "  mean instant (Chmean)\t%v\t\t\t\n", formatTime(bs.Chmean))
+	fmt.Fprintf(tw, "  median instant (Chmed)\t%v\t\t\t\n", formatTime(bs.Chmed))
+	fmt.Fprintf(tw, "  spread over the span (Chstd)\t%v\t\t\t\n",
+		formatDuration(bs.Chstd.Sub(time.Time{})))
+
+	fmt.Fprintln(tw, "\nWHAT — the measurements\t\t\t")
+	fmt.Fprintf(tw, "  lowest (Msmin)\t%v\tmeasured at (ChAtMsmin)\t%v\t\n",
+		nav.Format(bs.Msmin), formatTime(bs.ChAtMsmin))
+	fmt.Fprintf(tw, "  highest (Msmax)\t%v\tmeasured at (ChAtMsmax)\t%v\t\n",
+		nav.Format(bs.Msmax), formatTime(bs.ChAtMsmax))
+	fmt.Fprintf(tw, "  mean (Msmean)\t%v\t\t\t\n", nav.Format(bs.Msmean))
+	fmt.Fprintf(tw, "  median (Msmed)\t%v\t\t\t\n", nav.Format(bs.Msmed))
+	fmt.Fprintf(tw, "  std deviation (Msstd)\t%v\t\t\t\n", nav.Format(bs.Msstd))
+
+	fmt.Fprintln(tw, "\nHOW OFTEN — the intervals between points\t\t\t")
+	fmt.Fprintf(tw, "  shortest (DChmin)\t%v\tending at (ChAtDChmin)\t%v\t\n",
+		formatDuration(bs.DChmin), formatTime(bs.ChAtDChmin))
+	fmt.Fprintf(tw, "  longest (DChmax)\t%v\tending at (ChAtDchmax)\t%v\t\n",
+		formatDuration(bs.DChmax), formatTime(bs.ChAtDchmax))
+	fmt.Fprintf(tw, "  mean (DChmean)\t%v\t\t\t\n", formatNanos(bs.DChmean))
+	fmt.Fprintf(tw, "  median (DChmed)\t%v\t\t\t\n", formatNanos(bs.DChmed))
+	fmt.Fprintf(tw, "  irregularity (DChstd)\t%v\t\t\t\n", formatNanos(bs.DChstd))
+
+	fmt.Fprintln(tw, "\nBY HOW MUCH — the variations from one point to the next\t\t\t")
+	fmt.Fprintf(tw, "  largest fall (DMsmin)\t%v\t\t\t\n", nav.Format(bs.DMsmin))
+	fmt.Fprintf(tw, "  largest rise (DMsmax)\t%v\t\t\t\n", nav.Format(bs.DMsmax))
+	fmt.Fprintf(tw, "  mean (DMsmean)\t%v\t\t\t\n", nav.Format(bs.DMsmean))
+	fmt.Fprintf(tw, "  median (DMsmed)\t%v\t\t\t\n", nav.Format(bs.DMsmed))
+	fmt.Fprintf(tw, "  std deviation (DMsstd)\t%v\t\t\t\n", nav.Format(bs.DMsstd))
+
 	fmt.Fprintln(tw)
 	tw.Flush()
-
-	fmt.Fprintf(w, "Value at first point: %v   at last point: %v\n",
-		nav.Format(bs.ValAtChmin), nav.Format(bs.ValAtChmax))
-	fmt.Fprintf(w, "Shortest interval at: %v   longest at: %v\n",
-		formatTime(bs.ChAtDChmin), formatTime(bs.ChAtDchmax))
-	fmt.Fprintf(w, "Minimum measured at : %v   maximum at: %v\n",
-		formatTime(bs.ChAtMsmin), formatTime(bs.ChAtMsmax))
 }
 
 // formatNanos renders a count of nanoseconds held in a float64 — the
