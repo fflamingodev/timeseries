@@ -275,12 +275,24 @@ func (ts *TimeSeries) AddAll(data []Datum) {
 		return
 	}
 
-	// SliceStable and not Slice: points sharing an instant must keep the
-	// order they were given, and stay after the ones already there.
+	ts.sortChronAsc()
+	ts.fillDeltasFrom(1)
+}
+
+// sortChronAsc puts the points back in ascending chronological order.
+//
+// It is unexported on purpose. Sorting is not something a caller has to
+// remember to do here: the series is chronological at all times, and
+// this is one of the two places that make it so, the other being Add.
+// Note that it leaves the deltas describing the previous order, so
+// every call must be followed by fillDeltasFrom.
+//
+// SliceStable and not Slice: points sharing an instant must keep the
+// order they were given, and stay after the ones already in the series.
+func (ts *TimeSeries) sortChronAsc() {
 	sort.SliceStable(ts.points, func(i, j int) bool {
 		return ts.points[i].Chron.Before(ts.points[j].Chron)
 	})
-	ts.fillDeltasFrom(1)
 }
 
 // isChronological reports whether the points are in non-decreasing
