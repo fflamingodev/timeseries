@@ -32,7 +32,7 @@ func TestAddAllInOrder(t *testing.T) {
 	}
 	checkInvariant(t, ts)
 	if got := ts.At(2).Dmeas; got != 10 {
-		t.Errorf("point 2: Dmeas = %s, want 10", show(got))
+		t.Errorf("point 2: Dmeas = %s, want 10", nav.Format(got))
 	}
 }
 
@@ -116,8 +116,8 @@ func TestAddAllAgreesWithAdd(t *testing.T) {
 				a.Dchron != b.Dchron || !sameFloat(a.Dmeas, b.Dmeas) {
 				t.Fatalf("round %d, point %d: Add gives {%s %s %v %s}, AddAll gives {%s %s %v %s}",
 					round, i,
-					a.Chron.Format("15:04"), show(a.Meas), a.Dchron, show(a.Dmeas),
-					b.Chron.Format("15:04"), show(b.Meas), b.Dchron, show(b.Dmeas))
+					a.Chron.Format("15:04"), nav.Format(a.Meas), a.Dchron, nav.Format(a.Dmeas),
+					b.Chron.Format("15:04"), nav.Format(b.Meas), b.Dchron, nav.Format(b.Dmeas))
 			}
 		}
 		checkInvariant(t, batched)
@@ -137,7 +137,7 @@ func TestAddAllKeepsTheOrderOfDuplicates(t *testing.T) {
 	checkInvariant(t, ts)
 	for i, want := range []float64{1, 2, 3} {
 		if got := ts.At(i).Meas; got != want {
-			t.Errorf("point %d: Meas = %s, want %v", i, show(got), want)
+			t.Errorf("point %d: Meas = %s, want %v", i, nav.Format(got), want)
 		}
 	}
 }
@@ -152,10 +152,10 @@ func TestAddAllMissingValues(t *testing.T) {
 	checkInvariant(t, ts)
 
 	if got := ts.At(2).Dmeas; !nav.IsNaV(got) {
-		t.Errorf("the variation out of a gap = %s, want NaV", show(got))
+		t.Errorf("the variation out of a gap = %s, want NaV", nav.Format(got))
 	}
 	if got := nav.Mean(ts.Meas()); got != 12 {
-		t.Errorf("Mean = %s, want 12", show(got))
+		t.Errorf("Mean = %s, want 12", nav.Format(got))
 	}
 }
 

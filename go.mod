@@ -6,4 +6,4 @@ go 1.26
 // plain NaN is silently skipped by aggregates. Use v0.2.0 or later.
 retract v0.1.0
 
-require github.com/fflamingodev/notavalue v0.1.0
+require github.com/fflamingodev/notavalue v0.2.0

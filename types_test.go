@@ -3,7 +3,6 @@ package timeseries
 import (
 	"math"
 	"math/rand"
-	"strconv"
 	"testing"
 	"time"
 
@@ -19,18 +18,6 @@ var origin = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 // at returns the instant h hours after the origin of the tests.
 func at(h int) time.Time {
 	return origin.Add(time.Duration(h) * time.Hour)
-}
-
-// show renders a float64 so that a failing test says "NaV" or "NaN"
-// instead of printing both as NaN.
-func show(x float64) string {
-	switch {
-	case nav.IsNaV(x):
-		return "NaV"
-	case math.IsNaN(x):
-		return "NaN"
-	}
-	return strconv.FormatFloat(x, 'g', -1, 64)
 }
 
 // sameFloat compares two measurements by category, since no NaN — NaV
@@ -75,7 +62,7 @@ func checkInvariant(t *testing.T, ts *TimeSeries) {
 		t.Errorf("the first point has Dchron = %v, want NaDuration: it has no predecessor", first.Dchron)
 	}
 	if !nav.IsNaV(first.Dmeas) {
-		t.Errorf("the first point has Dmeas = %s, want NaV", show(first.Dmeas))
+		t.Errorf("the first point has Dmeas = %s, want NaV", nav.Format(first.Dmeas))
 	}
 	if !first.IsFirst() {
 		t.Error("IsFirst() is false on the first point")
@@ -92,7 +79,7 @@ func checkInvariant(t *testing.T, ts *TimeSeries) {
 			t.Errorf("point %d: Dchron = %v, want %v", i, cur.Dchron, want)
 		}
 		if want := nav.Sub(cur.Meas, prev.Meas); !sameFloat(cur.Dmeas, want) {
-			t.Errorf("point %d: Dmeas = %s, want %s", i, show(cur.Dmeas), show(want))
+			t.Errorf("point %d: Dmeas = %s, want %s", i, nav.Format(cur.Dmeas), nav.Format(want))
 		}
 		if cur.IsFirst() {
 			t.Errorf("point %d reports IsFirst()", i)
@@ -141,7 +128,7 @@ func TestNewDataUnitHasNoPredecessor(t *testing.T) {
 		t.Errorf("Dchron = %v, want NaDuration", du.Dchron)
 	}
 	if !nav.IsNaV(du.Dmeas) {
-		t.Errorf("Dmeas = %s, want NaV", show(du.Dmeas))
+		t.Errorf("Dmeas = %s, want NaV", nav.Format(du.Dmeas))
 	}
 	if !du.IsFirst() {
 		t.Error("IsFirst() is false")
@@ -209,7 +196,7 @@ func TestAddInOrder(t *testing.T) {
 	checkInvariant(t, ts)
 
 	if got := ts.At(1).Dmeas; got != 2 {
-		t.Errorf("point 1: Dmeas = %s, want 2", show(got))
+		t.Errorf("point 1: Dmeas = %s, want 2", nav.Format(got))
 	}
 	if got := ts.At(1).Dchron; got != time.Hour {
 		t.Errorf("point 1: Dchron = %v, want 1h", got)
@@ -237,13 +224,13 @@ func TestAddInTheMiddle(t *testing.T) {
 	}
 	for i, wantMeas := range []float64{10, 12, 14} {
 		if got := ts.At(i).Meas; got != wantMeas {
-			t.Errorf("point %d: Meas = %s, want %v", i, show(got), wantMeas)
+			t.Errorf("point %d: Meas = %s, want %v", i, nav.Format(got), wantMeas)
 		}
 	}
 	// The point that now follows the newcomer must have been recomputed:
 	// its Dmeas was 4 against the first point, it is 2 against the new one.
 	if got := ts.At(2).Dmeas; got != 2 {
-		t.Errorf("the successor was not recomputed: Dmeas = %s, want 2", show(got))
+		t.Errorf("the successor was not recomputed: Dmeas = %s, want 2", nav.Format(got))
 	}
 }
 
@@ -257,13 +244,13 @@ func TestAddBeforeTheFirst(t *testing.T) {
 	checkInvariant(t, ts)
 
 	if got := ts.At(0).Meas; got != 10 {
-		t.Errorf("the new point is not first: Meas = %s", show(got))
+		t.Errorf("the new point is not first: Meas = %s", nav.Format(got))
 	}
 	if ts.At(1).IsFirst() {
 		t.Error("the former first point still reports IsFirst()")
 	}
 	if got := ts.At(1).Dmeas; got != 2 {
-		t.Errorf("the former first point kept its sentinel: Dmeas = %s, want 2", show(got))
+		t.Errorf("the former first point kept its sentinel: Dmeas = %s, want 2", nav.Format(got))
 	}
 }
 
@@ -278,7 +265,7 @@ func TestAddDuplicateTimestamps(t *testing.T) {
 	// Inserted after the point it shares its instant with.
 	for i, wantMeas := range []float64{10, 20, 30} {
 		if got := ts.At(i).Meas; got != wantMeas {
-			t.Errorf("point %d: Meas = %s, want %v", i, show(got), wantMeas)
+			t.Errorf("point %d: Meas = %s, want %v", i, nav.Format(got), wantMeas)
 		}
 	}
 	// Two points at the same instant: no time elapsed between them.
@@ -333,10 +320,10 @@ func TestDeltaAroundAMissingMeasurement(t *testing.T) {
 	checkInvariant(t, ts)
 
 	if got := ts.At(1).Dmeas; !nav.IsNaV(got) {
-		t.Errorf("the variation into a gap = %s, want NaV", show(got))
+		t.Errorf("the variation into a gap = %s, want NaV", nav.Format(got))
 	}
 	if got := ts.At(2).Dmeas; !nav.IsNaV(got) {
-		t.Errorf("the variation out of a gap = %s, want NaV: 14 is not a rise of 14", show(got))
+		t.Errorf("the variation out of a gap = %s, want NaV: 14 is not a rise of 14", nav.Format(got))
 	}
 	// Time, however, is never missing: the clock kept running.
 	if got := ts.At(2).Dchron; got != time.Hour {
@@ -356,7 +343,7 @@ func TestDeltaAroundAnError(t *testing.T) {
 			t.Errorf("point %d: Dmeas = NaV, want a plain NaN: an error is not a gap", i)
 		}
 		if !math.IsNaN(got) {
-			t.Errorf("point %d: Dmeas = %s, want a plain NaN", i, show(got))
+			t.Errorf("point %d: Dmeas = %s, want a plain NaN", i, nav.Format(got))
 		}
 	}
 }
@@ -380,7 +367,7 @@ func TestDeltaWhenAnErrorPrecedesAGap(t *testing.T) {
 			"and a raw subtraction would have kept the NaV tag here")
 	}
 	if !nav.IsStdNaN(got) {
-		t.Errorf("Dmeas = %s, want a plain NaN", show(got))
+		t.Errorf("Dmeas = %s, want a plain NaN", nav.Format(got))
 	}
 }
 
@@ -399,12 +386,12 @@ func TestMeas(t *testing.T) {
 		t.Errorf("Meas() = %v", got)
 	}
 	if !nav.IsNaV(got[1]) {
-		t.Errorf("the gap did not survive the extraction: %s", show(got[1]))
+		t.Errorf("the gap did not survive the extraction: %s", nav.Format(got[1]))
 	}
 
 	// The aggregates of notavalue apply directly to it.
 	if mean := nav.Mean(got); mean != 12 {
-		t.Errorf("Mean over the extracted values = %s, want 12", show(mean))
+		t.Errorf("Mean over the extracted values = %s, want 12", nav.Format(mean))
 	}
 	if n := nav.CountNaV(got); n != 1 {
 		t.Errorf("CountNaV = %d, want 1", n)
