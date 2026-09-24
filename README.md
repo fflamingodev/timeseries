@@ -136,7 +136,8 @@ depends on nothing but the standard library.
 
 [GUIDE.md](GUIDE.md) is the long form: the reasoning behind the NaV
 policy, the handling of time and time zones in detail, and a chapter
-per operation with what it does to gaps and to errors.
+per operation with what it does to gaps and to errors. It is also
+available in French: [GUIDE.fr.md](GUIDE.fr.md).
 
 ## Status
 

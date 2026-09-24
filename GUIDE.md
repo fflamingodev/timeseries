@@ -5,6 +5,8 @@ Everything the package does, and why it does it that way.
 The [README](README.md) is the tour; this is the manual. It can be read
 in order, or opened at the chapter that matches the question at hand.
 
+*Une version française est disponible : [GUIDE.fr.md](GUIDE.fr.md).*
+
 ---
 
 ## 1. What a measured series really looks like
