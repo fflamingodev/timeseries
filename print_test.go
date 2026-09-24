@@ -329,6 +329,234 @@ func TestWalkthroughWithoutErrors(t *testing.T) {
 	}
 }
 
+// TestWalkthroughReduce follows a signal that holds its value between
+// changes — a heating setpoint — from the raw log to its reduced form,
+// three times: straight from the raw readings, from the raw readings
+// with their silences marked, and through Regularize.
+//
+//	go test -run TestWalkthroughReduce -v
+//
+// The roads do not end at the same place, and the difference is the
+// lesson. Reduce sees a gap only where the series says NaV. The raw log
+// says nothing during the hour the logger was silent — it has no reading
+// there at all — so the reduced series holds 21 °C straight across the
+// silence, and Expand fills it in as if it had been measured.
+//
+// MarkSilences puts a NaV where an alarm watching the logger would have
+// fired, fifteen minutes into the silence, and the reduction keeps it.
+// The regularized series has a point every ten minutes, NaV where
+// nothing arrived, and the silence survives the reduction too.
+func TestWalkthroughReduce(t *testing.T) {
+	var out bytes.Buffer
+	section := func(title string) {
+		out.WriteString("\n### " + title + "\n\n")
+	}
+
+	// --- 1. Generate ---------------------------------------------------
+	//
+	// A setpoint logged every ten minutes by a logger that drifts by up
+	// to two minutes either way: 19 °C, raised to 21 °C around 01:30,
+	// lowered to 17 °C around 03:40. One reading comes back empty at
+	// 00:50, and the logger falls silent from 02:10 to 03:10 — seven
+	// readings that never arrive.
+	jitter := []int{0, 2, -1, 1, -2}
+	raw := NewTimeSeries("Heating setpoint")
+	raw.Comment = "logged every ten minutes, give or take two; silent 02:10-03:10"
+
+	var batch []Datum
+	for k := 0; k <= 25; k++ {
+		if k >= 13 && k <= 19 {
+			continue // the silence: nothing, not even a NaV
+		}
+		value := 19.0
+		switch {
+		case k == 5:
+			value = nav.NaV // the reading that came back empty
+		case k >= 22:
+			value = 17
+		case k >= 9:
+			value = 21
+		}
+		batch = append(batch, NewDatum(atMinute(10*k+jitter[k%5]), value))
+	}
+	raw.AddBatchData(batch)
+	checkInvariant(t, raw)
+
+	section("1. The raw log")
+	raw.Fprint(&out)
+
+	// --- 2. Reduce the raw log -------------------------------------------
+	//
+	// Only the changes are kept, with both ends. The empty reading at
+	// 00:50 is a change, going in and coming out. The silence is not: on
+	// either side of it the setpoint reads 21, and nothing in between
+	// says otherwise.
+	rawReduced := raw.Reduce()
+	checkInvariant(t, rawReduced)
+
+	section("2. The raw log, reduced")
+	rawReduced.Fprint(&out)
+
+	// Expanded again on a ten-minute grid, the silence is filled with the
+	// value held — a value nobody measured.
+	rawBack, err := rawReduced.Expand(atMinute(0), atMinute(250), 10*time.Minute)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	section("2b. The raw reduction, expanded every ten minutes: the silence is gone")
+	rawBack.Fprint(&out)
+
+	// --- 2c. Watch the raw log, then reduce ------------------------------
+	//
+	// The logger reports every ten minutes, give or take two: readings
+	// never lie more than twelve minutes apart, and fifteen minutes
+	// without one means it is lost. MarkSilences dates the loss at the
+	// moment the alarm would fire — 01:59 plus fifteen minutes, 02:14 —
+	// and the reduction keeps it, without any grid.
+	watched, err := raw.MarkSilences(15 * time.Minute)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	checkInvariant(t, watched)
+	watchedReduced := watched.Reduce()
+	checkInvariant(t, watchedReduced)
+
+	section("2c. The raw log, silences beyond 15 minutes marked, then reduced")
+	watchedReduced.Fprint(&out)
+
+	watchedBack, err := watchedReduced.Expand(atMinute(0), atMinute(250), 10*time.Minute)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	section("2d. The watched reduction, expanded every ten minutes: the silence is back")
+	watchedBack.Fprint(&out)
+
+	// --- 3. Regularize first ---------------------------------------------
+	//
+	// Ten-minute windows, with three minutes of grace for the readings
+	// that arrive late, and the last reading of each window: for a
+	// setpoint, the value in force when the window closes. The windows
+	// that caught nothing come out as NaV.
+	regular, err := raw.RegularizeWithTolerance(10*time.Minute, 3*time.Minute, AggLast)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	checkInvariant(t, regular)
+
+	section("3. The log, regularized every ten minutes")
+	regular.Fprint(&out)
+
+	// --- 4. Then reduce ---------------------------------------------------
+	regReduced := regular.Reduce()
+	checkInvariant(t, regReduced)
+
+	section("4. The regularized log, reduced: the silence is kept")
+	regReduced.Fprint(&out)
+
+	// Expanded on the same grid, it gives the regularized series back.
+	regBack, err := regReduced.Expand(atMinute(0), atMinute(250), 10*time.Minute)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	section("4b. The regularized reduction, expanded again: the regularized log, point for point")
+	regBack.Fprint(&out)
+
+	out.WriteString("\nSizes:\n")
+	out.WriteString("  raw log                 : " + itoa(raw.Len()) + " points\n")
+	out.WriteString("  raw, reduced            : " + itoa(rawReduced.Len()) + " points\n")
+	out.WriteString("  raw, watched, reduced   : " + itoa(watchedReduced.Len()) + " points\n")
+	out.WriteString("  regularized             : " + itoa(regular.Len()) + " points\n")
+	out.WriteString("  regularized, reduced    : " + itoa(regReduced.Len()) + " points\n")
+
+	t.Log("\n" + out.String())
+
+	// --- 5. Check what the eye should see ---------------------------------
+
+	// Straight from the raw log: the changes, and no trace of the silence.
+	sameGrid(t, "raw, reduced", gridOf(rawReduced), []slot{
+		{0, 19},
+		{50, nav.NaV}, // the empty reading
+		{62, 19},      // coming out of it
+		{88, 21},
+		{219, 17},
+		{250, 17}, // the last reading, closing the observation
+	})
+
+	// And the price of it: during the silence, the expanded series claims
+	// a setpoint of 21 that nobody read.
+	for m := 130; m <= 190; m += 10 {
+		if v := rawBack.At(m / 10).Meas; v != 21 {
+			t.Errorf("raw, expanded, at minute %d: %s, want the 21 held across the silence",
+				m, nav.Format(v))
+		}
+	}
+
+	// Watched: the alarm at 02:14 is the only point added, and the
+	// reduction keeps it.
+	if watched.Len() != raw.Len()+1 {
+		t.Errorf("watching added %d points, want the single alarm", watched.Len()-raw.Len())
+	}
+	sameGrid(t, "raw, watched, reduced", gridOf(watchedReduced), []slot{
+		{0, 19},
+		{50, nav.NaV},
+		{62, 19},
+		{88, 21},
+		{134, nav.NaV}, // 01:59 + 15 minutes: the alarm
+		{200, 21},      // the logger is back
+		{219, 17},
+		{250, 17},
+	})
+
+	// Expanded, the value holds until the alarm and not a minute longer:
+	// still 21 at 02:10, unknown from 02:20 to 03:10. At 01:00 the grid
+	// is NaV too, the logger's first reading after the empty one coming
+	// at 01:02.
+	wantWatched := make([]slot, 0, 26)
+	for m := 0; m <= 250; m += 10 {
+		v := 19.0
+		switch {
+		case m == 50, m == 60, m >= 140 && m <= 190:
+			v = nav.NaV
+		case m >= 220:
+			v = 17
+		case m >= 90:
+			v = 21
+		}
+		wantWatched = append(wantWatched, slot{m, v})
+	}
+	sameGrid(t, "raw, watched, expanded", gridOf(watchedBack), wantWatched)
+
+	// Through Regularize: a point every ten minutes, the silence as NaV.
+	want := make([]slot, 0, 26)
+	for m := 0; m <= 250; m += 10 {
+		v := 19.0
+		switch {
+		case m == 50, m >= 130 && m <= 190:
+			v = nav.NaV
+		case m >= 220:
+			v = 17
+		case m >= 90:
+			v = 21
+		}
+		want = append(want, slot{m, v})
+	}
+	sameGrid(t, "regularized", gridOf(regular), want)
+
+	sameGrid(t, "regularized, reduced", gridOf(regReduced), []slot{
+		{0, 19},
+		{50, nav.NaV},
+		{60, 19},
+		{90, 21},
+		{130, nav.NaV}, // the silence, kept as a change
+		{200, 21},      // and the end of it
+		{220, 17},
+		{250, 17},
+	})
+
+	// The round trip is exact on the grid of the regularized series.
+	sameGrid(t, "regularized, reduced, expanded", gridOf(regBack), gridOf(regular))
+}
+
 // itoa keeps the walkthrough readable without importing strconv into
 // its narrative.
 func itoa(n int) string {
