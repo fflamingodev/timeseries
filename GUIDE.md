@@ -9,6 +9,40 @@ in order, or opened at the chapter that matches the question at hand.
 
 ---
 
+## Contents
+
+1. [What a measured series really looks like](#1-what-a-measured-series-really-looks-like)
+2. [The NaV policy](#2-the-nav-policy)
+   — [Two kinds of non-number](#21-two-kinds-of-non-number)
+   · [The three rules](#22-the-three-rules)
+   · [What the rules produce](#23-what-the-rules-produce)
+   · [NaN boxing in detail](#24-nan-boxing-in-detail)
+   · [Why not a struct with a bool](#25-why-not-a-struct-with-a-bool)
+   · [One warning](#26-one-warning)
+3. [Time](#3-time)
+   — [How an instant is stored](#31-how-an-instant-is-stored)
+   · [Unix time, underneath](#32-unix-time-underneath)
+   · [RFC 3339, the written form](#33-rfc-3339-the-written-form)
+   · [A duration that does not exist](#34-a-duration-that-does-not-exist)
+   · [Two conventions](#35-two-conventions-deliberately-different)
+   · [Alignment on UTC](#36-a-regular-grid-is-aligned-on-utc)
+   · [Calendar periods](#37-calendar-periods-and-the-days-that-are-not-24-hours-long)
+   · [Precision](#38-precision)
+4. [A series](#4-a-series)
+5. [The summary](#5-the-summary)
+6. [Cleaning](#6-cleaning)
+7. [Regularization](#7-regularization)
+8. [Downscaling by calendar](#8-downscaling-by-calendar)
+9. [Compressing and restoring](#9-compressing-and-restoring)
+10. [Interpolation](#10-interpolation)
+11. [Containers](#11-containers)
+12. [Output](#12-output)
+13. [Performance, measured](#13-performance-measured)
+14. [Coming from the previous version](#14-coming-from-the-previous-version)
+15. [Where the reasoning lives](#15-where-the-reasoning-lives)
+
+---
+
 ## 1. What a measured series really looks like
 
 A time series, in a textbook, is a value per instant on a regular grid.
@@ -87,7 +121,175 @@ A difference compares two specific values; if one is unknown, the
 difference is unknown, and any other answer manufactures a variation
 nobody measured.
 
-### 2.4 One warning
+### 2.4 NaN boxing in detail
+
+NaN boxing means storing information **inside** a floating-point
+number, in bits the standard leaves free. To see where they are, a
+`float64` has to be opened up.
+
+#### The shape of a float
+
+A `float64` is 64 bits, which IEEE-754 divides into three fields:
+
+```
+ ┌─┬───────────┬────────────────────────────────────────────────────┐
+ │S│  exponent │                    mantissa                        │
+ └─┴───────────┴────────────────────────────────────────────────────┘
+  1     11 bits                      52 bits
+```
+
+An ordinary value reads as "mantissa × 2^exponent", signed. But the
+standard reserves one configuration: **when all eleven exponent bits
+are ones**, it is not a number any more.
+
+- A zero mantissa means infinity, positive or negative by the sign.
+- A non-zero mantissa means **NaN**.
+
+And there the opportunity lies: the standard does not say *which*
+value the mantissa must take. Any of them, as long as it is not zero,
+makes a perfectly valid NaN. 2⁵² − 1 mantissas, two signs: **about nine
+quadrillion bit patterns are NaN**, half of them quiet and safe to use.
+All indistinguishable to arithmetic, and all wasted if nobody uses
+them.
+
+#### Quiet and signaling
+
+The standard splits them again, by the top bit of the mantissa:
+
+- **Quiet NaN** (bit set): travels through arithmetic silently. This is
+  what `math.NaN()` returns and what any invalid operation produces on
+  a current processor.
+- **Signaling NaN** (bit clear): meant to raise a hardware exception.
+  Go does not produce them, and most runtimes quiet them on first use.
+  This package never deals with them.
+
+That leaves **51 free bits** in the mantissa of a quiet NaN. Space
+nobody uses.
+
+#### What the package does with them
+
+`NaV` is a quiet NaN with **one** of those free bits set:
+
+```
+math.NaN()  : 0 11111111111 1000000000000000000000000000000000000000000000000000
+NaV         : 0 11111111111 1000000001000000000000000000000000000000000000000000
+                            ↑        ↑
+                            │        └── the NaV tag (bit 48)
+                            └── the "quiet" bit
+```
+
+The test is one line: it is a NaN, **and** the tag bit is set.
+
+```go
+func IsNaV(x float64) bool {
+    return math.IsNaN(x) && math.Float64bits(x)&navTag != 0
+}
+```
+
+Four consequences follow, and they are what justifies the technique:
+
+1. **No memory overhead.** A NaV is a `float64`. A slice of readings
+   stays a `[]float64`, with no companion array.
+2. **Existing code keeps working.** `math.IsNaN(NaV)` is true, so code
+   already written to guard against NaN guards against NaV too. Nothing
+   to recompile, nothing to audit.
+3. **The distinction survives a binary round trip.** Copying,
+   serializing in binary, going through `math.Float64bits`: the tag
+   travels with the value, because it *is* the value.
+4. **Fifty bits are still free.** "Never measured", "rejected as an
+   outlier", "interpolated" could one day be told apart without
+   breaking anything.
+
+#### What it costs
+
+The other side, stated plainly:
+
+- **Arithmetic must go through the package's functions.** What becomes
+  of the tag through a plain `-` is up to the processor (§2.6). That is
+  the main constraint.
+- **Text serialization loses the tag.** JSON has no NaN: every
+  non-number becomes `null`, and only the counters carry the
+  distinction across (§12.2).
+- **It is an unfamiliar technique.** A reviewer meeting the library has
+  to understand what they are reading first — which is what this
+  chapter is for.
+
+### 2.5 Why not a struct with a bool
+
+It is the common answer, and the first one that comes to mind:
+
+```go
+type Valued struct {
+    Value float64
+    Valid bool
+}
+```
+
+It is what `sql.NullFloat64` does in Go, `Option<f64>` in Rust,
+`double?` in C#, `Optional<Double>` in Java. Why not use it? Four
+reasons, measured on a million points.
+
+#### 1. It doubles the memory
+
+```
+float64                       :  8 bytes
+struct{ float64; bool }       : 16 bytes
+```
+
+The bool takes one byte, but alignment demands eight: seven bytes
+wasted per point. Over a million readings, **8 MB become 16 MB**; over
+ten million, 80 become 160.
+
+A parallel `[]bool` mask does better — 9 MB — at the price of a second
+slice to carry, to slice and to sort along with the first, and to
+forget at the first refactoring.
+
+#### 2. It cuts the library off from everything else
+
+This is the decisive one. **Everything that computes on floats, in Go,
+expects a `[]float64`**: gonum, Fourier transforms, statistics
+packages, and `notavalue` itself.
+
+With a struct, every call needs an extraction first — a loop and an
+allocation proportional to the series:
+
+| Mean over a million points | Time | Allocation |
+|---|---|---|
+| Struct, then extraction to `[]float64` | 1 368 µs | **8 MB per call** |
+| NaN boxing, slice passed as it is | 623 µs | **none** |
+
+Twice as slow, and 8 MB allocated per call. On a pipeline chaining
+mean, median, deviation and percentiles, the bill is paid four times.
+
+#### 3. A pointer is worse
+
+`*float64`, with `nil` for absence, looks elegant. But every point
+becomes an 8-byte pointer **plus** the value it points at, somewhere
+else — and above all, a slice of a million pointers is walked by the
+garbage collector at every cycle, where a `[]float64` holds no pointer
+at all and stays invisible to it.
+
+#### 4. A sentinel value is a trap
+
+Coding absence as −999, or as 0, is the oldest answer. It works until
+the day a real reading is −999 — and that day comes. A NaV cannot be
+mistaken for a measurement: no operation on real numbers produces it.
+
+#### The full table
+
+| Approach | Bytes per point | Works as `[]float64` | Invisible to the GC | Can be confused with data |
+|---|---|---|---|---|
+| **NaN boxing** | 8 | yes | yes | no |
+| `struct{float64; bool}` | 16 | no | yes | no |
+| `[]float64` + `[]bool` | 9 | yes, but the mask travels apart | yes | no |
+| `*float64` | 8 + the value | no | **no** | no |
+| Sentinel −999 | 8 | yes | yes | **yes** |
+
+Scanning speed does not settle it: the first four run between 0.6 and
+0.8 ms per million points, and the gap is dominated by whatever else
+the loop does. **Memory and interoperability decide**, not nanoseconds.
+
+### 2.6 One warning
 
 Do not use plain operators on values that may be missing. What payload
 a NaN result carries is left to the processor, and processors disagree:
@@ -113,14 +315,102 @@ standard library. The package never converts a series to another zone
 on its own: the zone a reading carries is a statement about where it
 was taken.
 
-### 3.2 A duration that does not exist
+### 3.2 Unix time, underneath
+
+Underneath, every system that exchanges dates agrees on one origin:
+**1 January 1970, 00:00:00 UTC**. An instant becomes a single number,
+the count of what has elapsed since — seconds, milliseconds or
+nanoseconds depending on the precision. That is *Unix time*: what
+`time.Time` holds internally, what PostgreSQL stores, what sensors
+report.
+
+A few landmarks for reading such a number:
+
+| Number | Unit | Instant |
+|---|---|---|
+| `0` | second | 1 January 1970, 00:00:00 UTC |
+| `1 000 000 000` | seconds | 9 September 2001 |
+| `1 767 225 600` | seconds | 1 January 2026 |
+| `1 767 225 600 000 000 000` | nanoseconds | the same instant |
+
+Three properties are worth knowing, because they explain choices made
+here.
+
+**Unix time knows nothing of zones.** It is a count from an origin, so
+an absolute instant. Two sensors, one in Luxembourg and one in Tokyo,
+measuring at the same moment produce the same number. A zone only
+enters at display time — which is exactly why a regular grid aligns on
+it (§3.6): it is the only reference two series share, wherever they
+were recorded.
+
+**It ignores leap seconds.** The Earth does not rotate regularly, and
+UTC occasionally inserts a second — the last one in 2016. Unix time
+pretends they do not exist: a day there is always exactly 86 400
+seconds. Systems that must stay accurate absorb them by stretching
+their clock imperceptibly over a few hours. In practice: a duration
+spanning a leap second is wrong by one second, which matters only to
+fine metrology.
+
+**It says nothing about the precision of the measurement.** A timestamp
+to the nanosecond does not mean the sensor knew what it was doing to
+the nanosecond. The number is exact; the measurement may not be — and
+the library keeps what it is given without pretending to improve it.
+
+In Go, a `time.Time` carries more than a count: the absolute instant, a
+location, and sometimes a monotonic clock reading — immune to system
+clock changes — which the standard library uses to measure durations.
+Timestamps coming from a database or a sensor carry none; that is of no
+consequence here.
+
+### 3.3 RFC 3339, the written form
+
+Unix time is a number; a written form is needed too, readable by a
+human and unambiguous to a machine. That is **RFC 3339**, and it is
+what `ToJSON` produces:
+
+```
+2026-01-15T14:30:00Z           ← in UTC, "Z" for zero offset
+2026-01-15T15:30:00+01:00      ← the same instant, seen from Paris
+2026-01-15T14:30:00.123456789Z ← with its nanoseconds
+```
+
+The form is strict, and that is its value: a date, a `T`, a time, an
+offset. Largest unit to smallest, always, zero-padded. It is a
+deliberately narrow subset of ISO 8601, which allows a crowd of
+variants — weeks, durations, partial dates, omitted separators — that
+no implementation supports in full.
+
+Three properties justify sticking to it:
+
+**Lexicographic order is chronological order.** Two RFC 3339 timestamps
+written with the same offset compare as ordinary text, character by
+character, and the resulting order is the right one. That is what lets
+a log file be sorted with `sort`, or a text column be indexed without
+conversion.
+
+**The offset is mandatory.** A timestamp without one — as so many
+databases and APIs produce — does not designate an instant:
+`2026-01-15 14:30:00` may be half past two in Paris, in Tokyo or in New
+York, three instants hours apart. RFC 3339 forbids it. When data
+arrives in that shape, a zone has to be supplied, and that is a
+decision rather than a conversion.
+
+**But an offset is not a zone.** `+01:00` says how far local time sits
+from UTC at that instant; it does not say Paris, nor whether summer
+time applied. A series serialized to RFC 3339 and read back therefore
+loses the name of its zone: it keeps the exact instant, which is enough
+for any computation, but a calendar grouping done after that trip falls
+back on a frozen offset rather than a real zone. **When local days
+matter, group before serializing**, not after.
+
+### 3.4 A duration that does not exist
 
 The first point of a series has no predecessor, so the interval before
 it does not exist. That is `NaDuration`, the counterpart of NaV for
 time. It prints as `NaDuration` rather than as the nonsense figure of
 −2562047h47m16s, and `IsNaDuration` recognizes it.
 
-### 3.3 Two conventions, deliberately different
+### 3.5 Two conventions, deliberately different
 
 | | Window | A reading at the boundary | The emitted instant |
 |---|---|---|---|
@@ -135,7 +425,7 @@ human would say.
 Both emit their point at the *end* of the period, so both read as
 "everything up to here".
 
-### 3.4 A regular grid is aligned on UTC
+### 3.6 A regular grid is aligned on UTC
 
 The grid is not aligned on the first reading — that would make two
 series incomparable — but on absolute time, which is to say on UTC.
@@ -158,7 +448,7 @@ they were recorded. If local hour boundaries are what matters — a daily
 report for a local team — use `DownscaleDaily`, which works in the
 calendar, or shift the timestamps before regularizing.
 
-### 3.5 Calendar periods, and the days that are not 24 hours long
+### 3.7 Calendar periods, and the days that are not 24 hours long
 
 Calendar boundaries only mean something in a place, so the Downscale
 family computes them in the location of the series' first reading.
@@ -170,7 +460,7 @@ at midnight, and the day opens at 01:00. Building a period on a
 midnight that never happened would close it an hour early, and every
 period after it too.
 
-### 3.6 Precision
+### 3.8 Precision
 
 Statistics on timestamps are computed on offsets from the first point,
 not on nanoseconds since 1970.
@@ -367,7 +657,7 @@ example it condemns exactly the two low readings, 90 and 89.
 hourly, err := ts.Regularize(time.Hour, timeseries.AggMean)
 ```
 
-Windows are closed on the right and aligned on the clock (§3.4). A
+Windows are closed on the right and aligned on the clock (§3.6). A
 window that caught no reading is emitted as NaV: a regular grid must
 have a point per step, and a step where nothing arrived is a gap, not
 an absence of step. Nothing is emitted before the first reading or

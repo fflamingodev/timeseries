@@ -11,6 +11,40 @@ sont en anglais ; les noms de fonctions le restent donc ici aussi.*
 
 ---
 
+## Table des matières
+
+1. [À quoi ressemble vraiment une série mesurée](#1-à-quoi-ressemble-vraiment-une-série-mesurée)
+2. [La politique NaV](#2-la-politique-nav)
+   — [Deux façons de ne pas être un nombre](#21-deux-façons-de-ne-pas-être-un-nombre)
+   · [Les trois règles](#22-les-trois-règles)
+   · [Ce que les règles produisent](#23-ce-que-les-règles-produisent)
+   · [Le NaN-boxing en détail](#24-le-nan-boxing-en-détail)
+   · [Pourquoi pas une structure avec un booléen](#25-pourquoi-pas-une-structure-avec-un-booléen)
+   · [Un avertissement](#26-un-avertissement)
+3. [Le temps](#3-le-temps)
+   — [Comment un instant est stocké](#31-comment-un-instant-est-stocké)
+   · [Le temps Unix, sous les horodatages](#32-le-temps-unix-sous-les-horodatages)
+   · [RFC 3339, la forme écrite](#33-rfc-3339-la-forme-écrite)
+   · [Une durée qui n'existe pas](#34-une-durée-qui-nexiste-pas)
+   · [Deux conventions différentes](#35-deux-conventions-délibérément-différentes)
+   · [L'alignement sur l'UTC](#36-une-grille-régulière-saligne-sur-lutc)
+   · [Les périodes calendaires](#37-les-périodes-calendaires-et-les-jours-qui-ne-durent-pas-24-heures)
+   · [La précision](#38-la-précision)
+4. [Une série](#4-une-série)
+5. [Le résumé](#5-le-résumé)
+6. [Le nettoyage](#6-le-nettoyage)
+7. [La régularisation](#7-la-régularisation)
+8. [Le regroupement calendaire](#8-le-regroupement-calendaire)
+9. [Comprimer et restituer](#9-comprimer-et-restituer)
+10. [L'interpolation](#10-linterpolation)
+11. [Les conteneurs](#11-les-conteneurs)
+12. [Les sorties](#12-les-sorties)
+13. [Les performances, mesurées](#13-les-performances-mesurées)
+14. [Venir de la version précédente](#14-venir-de-la-version-précédente)
+15. [Où vit le raisonnement](#15-où-vit-le-raisonnement)
+
+---
+
 ## 1. À quoi ressemble vraiment une série mesurée
 
 Une série temporelle, dans un manuel, c'est une valeur par instant sur
@@ -91,7 +125,186 @@ survivre à un jour manquant. Une différence compare deux valeurs
 précises ; si l'une est inconnue, la différence l'est aussi, et toute
 autre réponse fabrique une variation que personne n'a mesurée.
 
-### 2.4 Un avertissement
+### 2.4 Le NaN-boxing en détail
+
+Le NaN-boxing consiste à ranger de l'information **à l'intérieur** d'un
+nombre flottant, dans des bits que la norme laisse libres. Pour
+comprendre où ils sont, il faut ouvrir un `float64`.
+
+#### La structure d'un flottant
+
+Un `float64` occupe 64 bits, répartis par la norme IEEE-754 en trois
+champs :
+
+```
+ ┌─┬───────────┬────────────────────────────────────────────────────┐
+ │S│  exposant │                     mantisse                       │
+ └─┴───────────┴────────────────────────────────────────────────────┘
+  1     11 bits                      52 bits
+```
+
+La valeur ordinaire se lit « mantisse × 2^exposant », avec le signe
+devant. Mais la norme réserve une configuration : **quand les 11 bits
+d'exposant valent tous 1**, ce n'est plus un nombre.
+
+- Si la mantisse vaut zéro, c'est l'infini, positif ou négatif selon le
+  signe.
+- Si la mantisse vaut autre chose que zéro, c'est un **NaN**.
+
+Et c'est là que tout se joue : la norme ne dit pas *quelle* valeur la
+mantisse doit prendre. N'importe laquelle, pourvu qu'elle ne soit pas
+nulle, fait un NaN parfaitement valide. Les comptes sont vite faits :
+2⁵² − 1 mantisses possibles, deux signes, soit **environ neuf millions
+de milliards de configurations qui sont toutes des NaN** — dont la
+moitié, celles dites silencieuses, sont utilisables sans risque. Toutes
+indiscernables pour l'arithmétique, et toutes perdues si personne ne
+s'en sert.
+
+#### Silencieux et signalant
+
+La norme distingue encore deux familles, par le bit de poids fort de la
+mantisse :
+
+- **NaN silencieux** (bit à 1) : il traverse les calculs sans bruit.
+  C'est celui que rend `math.NaN()`, et celui que produit toute
+  opération invalide sur un processeur courant.
+- **NaN signalant** (bit à 0) : il est censé déclencher une exception
+  matérielle. En pratique, Go ne l'utilise pas, et la plupart des
+  environnements le convertissent en silencieux dès la première
+  opération. On ne s'en sert pas ici.
+
+Il reste donc **51 bits libres** dans la mantisse d'un NaN silencieux.
+C'est de la place perdue, que rien n'utilise.
+
+#### Ce que le paquet en fait
+
+`NaV` est un NaN silencieux dont **un** de ces bits libres est allumé :
+
+```
+math.NaN()  : 0 11111111111 1000000000000000000000000000000000000000000000000000
+NaV         : 0 11111111111 1000000001000000000000000000000000000000000000000000
+                            ↑        ↑
+                            │        └── le repère NaV (bit 48)
+                            └── le bit « silencieux »
+```
+
+Le test tient en une ligne : c'est un NaN, **et** le bit de repère est
+allumé.
+
+```go
+func IsNaV(x float64) bool {
+    return math.IsNaN(x) && math.Float64bits(x)&navTag != 0
+}
+```
+
+Quatre conséquences en découlent, et ce sont elles qui justifient la
+technique :
+
+1. **Aucun surcoût mémoire.** Un NaV est un `float64`. Un tableau de
+   mesures reste un `[]float64`, sans tableau compagnon.
+2. **Le code existant continue de fonctionner.** `math.IsNaN(NaV)` est
+   vrai, donc tout code déjà écrit pour se prémunir des NaN se prémunit
+   aussi des NaV. Rien à recompiler, rien à auditer.
+3. **La distinction survit au transport binaire.** Copier, sérialiser
+   en binaire, passer par `math.Float64bits` : le repère voyage avec la
+   valeur, puisqu'il *est* la valeur.
+4. **Il reste 50 bits libres.** On pourrait un jour distinguer
+   « jamais mesuré », « rejeté comme aberrant », « interpolé », sans
+   rien casser de l'existant.
+
+#### Ce que ça coûte
+
+Il faut être honnête sur le revers :
+
+- **L'arithmétique doit passer par les fonctions du paquet.** Ce que
+  devient le repère à travers un `-` ordinaire dépend du processeur
+  (§2.6). C'est la contrainte principale.
+- **La sérialisation texte perd le repère.** JSON n'a pas de NaN : tout
+  non-nombre devient `null`, et la distinction ne subsiste que dans les
+  compteurs (§12.2).
+- **C'est une technique peu connue.** Un relecteur qui découvre la
+  bibliothèque doit d'abord comprendre ce qu'il lit — ce chapitre
+  existe pour ça.
+
+### 2.5 Pourquoi pas une structure avec un booléen
+
+C'est la solution la plus répandue, et la première à laquelle on pense :
+
+```go
+type Valued struct {
+    Value float64
+    Valid bool
+}
+```
+
+C'est ce que fait `sql.NullFloat64` en Go, `Option<f64>` en Rust,
+`double?` en C#, `Optional<Double>` en Java. Pourquoi ne pas l'avoir
+reprise ? Quatre raisons, mesurées sur un million de points.
+
+#### 1. Elle double la mémoire
+
+```
+float64                       :  8 octets
+struct{ float64; bool }       : 16 octets
+```
+
+Le booléen n'occupe qu'un octet, mais l'alignement en impose huit : sept
+octets sont perdus par point. Sur un million de mesures, **8 Mo
+deviennent 16 Mo** ; sur dix millions, 80 deviennent 160.
+
+Un masque parallèle `[]bool` fait mieux — 9 Mo — mais au prix d'un
+second tableau à transporter, à découper et à trier en même temps que le
+premier, et qu'on oublie à la première refonte.
+
+#### 2. Elle coupe la bibliothèque du reste du monde
+
+C'est l'argument décisif. **Tout ce qui calcule sur des flottants, en
+Go, attend un `[]float64`** : gonum, les transformées de Fourier, les
+bibliothèques de statistiques, et `notavalue` lui-même.
+
+Avec une structure, chaque appel exige d'abord une extraction — une
+boucle et une allocation proportionnelles à la série :
+
+| Moyenne sur un million de points | Temps | Allocation |
+|---|---|---|
+| Structure, puis extraction en `[]float64` | 1 368 µs | **8 Mo par appel** |
+| NaN-boxing, tableau passé tel quel | 623 µs | **aucune** |
+
+Deux fois plus lent, et 8 Mo alloués à chaque appel. Sur un traitement
+qui enchaîne moyenne, médiane, écart-type et percentiles, la facture se
+paie quatre fois.
+
+#### 3. Un pointeur est pire
+
+`*float64`, avec `nil` pour l'absence, semble élégant. Mais chaque point
+devient un pointeur de 8 octets **plus** la valeur pointée quelque part
+ailleurs, et surtout : un tableau d'un million de pointeurs est parcouru
+par le ramasse-miettes à chaque cycle, alors qu'un `[]float64` ne
+contient aucun pointeur et lui reste totalement invisible.
+
+#### 4. La valeur sentinelle est un piège
+
+Coder l'absence par −999, ou par 0, est la solution la plus ancienne.
+Elle fonctionne jusqu'au jour où une vraie mesure vaut −999 — et ce jour
+arrive. Le NaV, lui, ne peut pas être confondu avec une mesure : aucune
+opération sur des nombres réels ne le produit.
+
+#### Le tableau complet
+
+| Solution | Mémoire par point | Compatible `[]float64` | Invisible au GC | Confusion possible |
+|---|---|---|---|---|
+| **NaN-boxing** | 8 o | oui | oui | non |
+| `struct{float64; bool}` | 16 o | non | oui | non |
+| `[]float64` + `[]bool` | 9 o | oui, mais le masque suit à part | oui | non |
+| `*float64` | 8 o + la valeur | non | **non** | non |
+| Sentinelle −999 | 8 o | oui | oui | **oui** |
+
+La vitesse de parcours, elle, ne départage pas : les quatre premières
+tournent entre 0,6 et 0,8 ms par million de points, et l'écart est
+dominé par le reste du calcul. **Ce qui décide, c'est la mémoire et la
+compatibilité**, pas les nanosecondes.
+
+### 2.6 Un avertissement
 
 N'utilisez pas les opérateurs ordinaires sur des valeurs susceptibles
 d'être absentes. La charge utile que porte un NaN résultat est laissée
@@ -118,14 +331,108 @@ bibliothèque ne convertit jamais une série dans un autre fuseau de sa
 propre initiative : le fuseau que porte un relevé est une affirmation
 sur l'endroit où il a été pris.
 
-### 3.2 Une durée qui n'existe pas
+### 3.2 Le temps Unix, sous les horodatages
+
+Sous la surface, tous les systèmes qui échangent des dates s'accordent
+sur une même origine : **le 1ᵉʳ janvier 1970 à 00:00:00 UTC**. Un
+instant s'y ramène à un seul nombre, le compte de ce qui s'est écoulé
+depuis — secondes, millisecondes ou nanosecondes selon la précision
+retenue. C'est le *temps Unix*, et c'est ce que `time.Time` manipule en
+interne, ce que PostgreSQL stocke, ce que transportent les capteurs.
+
+Quelques repères pour lire un tel nombre :
+
+| Nombre | Unité | Instant |
+|---|---|---|
+| `0` | seconde | 1ᵉʳ janvier 1970, 00:00:00 UTC |
+| `1 000 000 000` | secondes | 9 septembre 2001 |
+| `1 767 225 600` | secondes | 1ᵉʳ janvier 2026 |
+| `1 767 225 600 000 000 000` | nanosecondes | le même instant |
+
+Trois propriétés méritent d'être connues, parce qu'elles expliquent des
+choix de la bibliothèque.
+
+**Le temps Unix ne connaît pas les fuseaux.** C'est un compte depuis une
+origine, donc un instant absolu. Deux capteurs, l'un à Luxembourg et
+l'autre à Tokyo, qui mesurent au même moment produisent le même nombre.
+Le fuseau n'intervient qu'à l'affichage — et c'est exactement pourquoi
+une grille régulière s'aligne dessus (§3.6) : c'est la seule référence
+que deux séries partagent, où qu'elles aient été enregistrées.
+
+**Il ignore les secondes intercalaires.** La rotation de la Terre n'est
+pas régulière, et l'UTC y ajoute de temps en temps une seconde — la
+dernière en 2016. Le temps Unix, lui, fait comme si elles n'existaient
+pas : une journée y compte toujours exactement 86 400 secondes. Les
+systèmes qui doivent rester à l'heure les absorbent en étirant
+imperceptiblement leur horloge sur quelques heures. Conséquence
+pratique : une durée calculée entre deux instants séparés par une
+seconde intercalaire est fausse d'une seconde, ce qui n'a d'importance
+que pour la métrologie fine.
+
+**Il ne dit rien de la précision de la mesure.** Un horodatage à la
+nanoseconde n'implique pas que le capteur sache ce qu'il faisait à la
+nanoseconde près. Le nombre est exact, la mesure ne l'est pas
+forcément — et la bibliothèque conserve ce qu'on lui donne sans
+prétendre l'améliorer.
+
+En Go, un `time.Time` porte davantage qu'un simple compte : l'instant
+absolu, un fuseau, et parfois une lecture d'horloge monotone —
+insensible aux changements d'heure du système — que la bibliothèque
+standard utilise pour mesurer des durées. Les horodatages venus d'une
+base ou d'un capteur n'en ont pas ; c'est sans conséquence ici.
+
+### 3.3 RFC 3339, la forme écrite
+
+Le temps Unix est un nombre ; il faut aussi une forme écrite, lisible
+par un humain et non ambiguë pour une machine. C'est la **RFC 3339**,
+et c'est elle que produit `ToJSON` :
+
+```
+2026-01-15T14:30:00Z           ← en UTC, le « Z » pour zéro décalage
+2026-01-15T15:30:00+01:00      ← le même instant, vu de Paris
+2026-01-15T14:30:00.123456789Z ← avec ses nanosecondes
+```
+
+La forme est stricte, et c'est ce qui en fait la valeur : une date, un
+`T`, une heure, un décalage. Du plus grand au plus petit, toujours, avec
+des zéros de remplissage. C'est un sous-ensemble volontairement réduit
+de la norme ISO 8601, qui autorise elle une foule de variantes — les
+semaines, les durées, les dates partielles, l'omission des séparateurs —
+et qu'aucune implémentation ne couvre entièrement.
+
+Trois propriétés justifient de s'y tenir :
+
+**Le tri lexicographique est le tri chronologique.** Deux horodatages
+RFC 3339 exprimés dans le même décalage se comparent comme du texte
+ordinaire, caractère par caractère, et l'ordre obtenu est le bon. C'est
+ce qui permet de trier un fichier de journaux avec `sort`, ou d'indexer
+une colonne texte sans la convertir.
+
+**Le décalage est obligatoire.** Un horodatage sans décalage — comme en
+produisent tant de bases de données et d'API — ne désigne pas un
+instant : `2026-01-15 14:30:00` peut être quatorze heures et demie à
+Paris, à Tokyo ou à New York, soit trois instants distants de plusieurs
+heures. La RFC 3339 l'interdit. Quand une donnée arrive dans cette
+forme, il faut lui adjoindre le fuseau que le fournisseur sous-entend,
+et c'est une décision, pas une conversion.
+
+**Mais un décalage n'est pas un fuseau.** `+01:00` dit de combien
+l'heure locale s'écarte de l'UTC à cet instant précis ; il ne dit pas
+qu'on est à Paris, ni si l'heure d'été s'appliquait. Une série
+sérialisée en RFC 3339 puis relue perd donc le nom de son fuseau : elle
+garde l'instant exact, ce qui suffit à tout calcul, mais un
+regroupement calendaire effectué après ce trajet retombera sur un
+décalage figé plutôt que sur un vrai fuseau. **Quand les journées
+locales comptent, regroupez avant de sérialiser**, pas après.
+
+### 3.4 Une durée qui n'existe pas
 
 Le premier point d'une série n'a pas de prédécesseur, donc l'intervalle
 qui le précède n'existe pas. C'est `NaDuration`, le pendant de NaV pour
 le temps. Il s'affiche « NaDuration » plutôt que sous la forme absurde
 de −2562047h47m16s, et `IsNaDuration` le reconnaît.
 
-### 3.3 Deux conventions, délibérément différentes
+### 3.5 Deux conventions, délibérément différentes
 
 | | Fenêtre | Un relevé sur la frontière | L'instant émis |
 |---|---|---|---|
@@ -140,7 +447,7 @@ journée qui commence, comme le dirait n'importe qui.
 Les deux datent leur point à la **fin** de la période, si bien que tous
 deux se lisent « tout ce qui précède jusqu'ici ».
 
-### 3.4 Une grille régulière s'aligne sur l'UTC
+### 3.6 Une grille régulière s'aligne sur l'UTC
 
 La grille ne s'aligne pas sur le premier relevé — ce qui rendrait deux
 séries incomparables — mais sur le temps absolu, c'est-à-dire sur
@@ -165,7 +472,7 @@ locales qui comptent — un rapport quotidien pour une équipe sur place —,
 utilisez `DownscaleDaily`, qui travaille dans le calendrier, ou décalez
 les horodatages avant de régulariser.
 
-### 3.5 Les périodes calendaires, et les jours qui ne durent pas 24 heures
+### 3.7 Les périodes calendaires, et les jours qui ne durent pas 24 heures
 
 Les frontières du calendrier n'ont de sens qu'en un lieu : la famille
 `Downscale` les calcule donc dans le fuseau du premier relevé de la
@@ -178,7 +485,7 @@ avancent à minuit, et la journée s'ouvre à 01:00. Bâtir une période sur
 un minuit qui n'a jamais eu lieu la fermerait une heure trop tôt, et
 toutes les périodes suivantes avec elle.
 
-### 3.6 La précision
+### 3.8 La précision
 
 Les statistiques sur les horodatages sont calculées sur des écarts au
 premier point, et non sur des nanosecondes depuis 1970.
@@ -379,7 +686,7 @@ relevés bas, 90 et 89.
 hourly, err := ts.Regularize(time.Hour, timeseries.AggMean)
 ```
 
-Les fenêtres ferment à droite et s'alignent sur l'horloge (§3.4). Une
+Les fenêtres ferment à droite et s'alignent sur l'horloge (§3.6). Une
 fenêtre qui n'a rien reçu est émise en NaV : une grille régulière doit
 avoir un point par pas, et un pas sans relevé est un trou, pas une
 absence de pas. Rien n'est émis avant le premier relevé ni après le
