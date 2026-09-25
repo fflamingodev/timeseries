@@ -139,6 +139,17 @@ policy, the handling of time and time zones in detail, and a chapter
 per operation with what it does to gaps and to errors. It is also
 available in French: [GUIDE.fr.md](GUIDE.fr.md).
 
+Both build to PDF, with a proper title page, table of contents and
+LaTeX typesetting:
+
+```
+make guides
+```
+
+This needs pandoc and a TeX distribution. The Markdown stays the
+source; LaTeX is only an output format, produced with the preamble in
+`docs/`.
+
 ## Status
 
 Pre-1.0. The semantics described here are settled and covered by tests,

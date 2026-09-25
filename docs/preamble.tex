@@ -1,0 +1,43 @@
+% Préambule LaTeX du guide timeseries, appliqué par pandoc (--include-in-header).
+% Le Markdown reste la source ; ce fichier ne règle que la typographie.
+
+\usepackage{microtype}          % césures et espacements fins
+\usepackage{etoolbox}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+% --- Titres : alignés à gauche, sans exception ---------------------------
+\titleformat{\section}{\Large\bfseries\raggedright}{\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries\raggedright}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\bfseries\raggedright}{\thesubsubsection}{1em}{}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.6em}
+
+% --- Les tableaux comparatifs sont larges : on les resserre --------------
+\AtBeginEnvironment{longtable}{\small}
+\AtBeginEnvironment{tabular}{\small}
+
+% --- En-tête et pied de page --------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\nouppercase{\leftmark}}
+\fancyhead[R]{\small timeseries}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% --- Exposants : Latin Modern ne les a pas, on les fabrique -------------
+\usepackage{newunicodechar}
+\newunicodechar{⁵}{\textsuperscript{5}}
+\newunicodechar{²}{\textsuperscript{2}}
+\newunicodechar{ᵉ}{\textsuperscript{e}}
+\newunicodechar{ʳ}{\textsuperscript{r}}
+\newunicodechar{·}{\textperiodcentered}
+\newunicodechar{±}{$\pm$}
+\newunicodechar{×}{$\times$}
+\newunicodechar{−}{$-$}
+
+% --- Les blocs de code gardent leurs caractères semi-graphiques ----------
+\usepackage{fvextra}
+\fvset{breaklines=true, breakanywhere=true, fontsize=\small}

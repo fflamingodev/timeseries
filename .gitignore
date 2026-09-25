@@ -30,3 +30,7 @@ Thumbs.db
 /bin/
 /dist/
 /vendor/
+
+# Les PDF sont reconstruits par « make guides », ils ne sont pas suivis.
+GUIDE.pdf
+GUIDE.fr.pdf
