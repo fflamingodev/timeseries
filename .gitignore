@@ -31,6 +31,20 @@ Thumbs.db
 /dist/
 /vendor/
 
-# Les PDF sont reconstruits par « make guides », ils ne sont pas suivis.
+# Les PDF et les fichiers intermédiaires de LaTeX se reconstruisent.
 GUIDE.pdf
 GUIDE.fr.pdf
+docs/*.pdf
+docs/*.aux
+docs/*.log
+docs/*.out
+docs/*.toc
+docs/*.bbl
+docs/*.bcf
+docs/*.blg
+docs/*.run.xml
+docs/*.fls
+docs/*.fdb_latexmk
+docs/*.xdv
+
+docs/*-SAVE-ERROR
