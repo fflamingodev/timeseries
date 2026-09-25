@@ -3,17 +3,19 @@
 
 # Guide de la bibliothèque *timeseries*
 
-**Séries temporelles irrégulières, à faible contenu informatif, pour traitement de masse et *high availability*** — Frédéric Flament
+**Séries temporelles irrégulières, traitement de masse sous *high availability*, séries à faible contenu informatif** — Frédéric Flament
 
 *Ce guide est écrit en LaTeX ; la version composée, avec sa table des
 matières et sa bibliographie, se construit par `make guide-fr`. La
 version anglaise est dans [GUIDE.md](GUIDE.md).*
 
-*`timeseries` traite des séries de relevés tels qu’ils arrivent : à des instants irréguliers, avec des trous là où l’instrument s’est tu, et des valeurs auxquelles personne ne croit. Elle les nettoie, les pose sur une grille régulière, comble ce qui peut l’être, les résume — sans jamais transformer un relevé manquant en zéro, ni laisser un relevé aberrant détruire un mois de statistiques.*
+*`timeseries` traite des séries de relevés tels qu’ils arrivent : à des instants irréguliers, avec des trous là où la chaîne de transmission est rompue. Elle nettoie, régularise et compacte — sans que des relevés absents ou incomplets ne cassent la série.*
 
 Elle traite aussi les signaux à faible contenu informatif — un état, une consigne, un compteur, qui répètent la même valeur des heures durant — en les ramenant à leurs changements, et sait les reconstituer ensuite.
 
-Le tout à l’échelle du parc et non du capteur isolé : les agrégats parcourent leurs données une fois et n’allouent rien, le chargement d’un lot est en $`n\log n`$ là où l’insertion point par point serait quadratique, et le coût par point reste constant jusqu’à dix millions de relevés. Les mesures sont dans le guide, avec les variantes écartées.
+Écrite en Go pour la simplicité d’écriture et la performance, elle reste simple à utiliser et a peu de concurrence.
+
+Les coûts sont bornés et mesurés. Un relevé occupe 32 octets, un `time.Time` et un `float64` ; le tableau des mesures ne contenant aucun pointeur, il échappe au parcours du ramasse-miettes. Les agrégats lisent la série une fois et n’allouent rien : de l’ordre de 1,2 ns par relevé pour une moyenne, un extremum ou une somme, 2 ns pour un écart-type ; seules la médiane et les percentiles trient une copie, à 50 ns. Le chargement d’un lot est en $`n\log n`$, avec reconnaissance en une passe d’un lot déjà ordonné, là où l’insertion point par point est quadratique — une seconde contre deux minutes et demie pour un million de relevés en désordre. Un tampon réutilisable supprime les allocations d’une boucle sur des centaines de séries, et le coût par relevé reste constant jusqu’à dix millions de points, seuls les tris portant leur $`n\log n`$. Les mesures et les variantes écartées figurent au chapitre 15.
 
 ## Introduction
 
