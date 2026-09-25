@@ -9,6 +9,22 @@ Le [README](README.md) est la visite guidée ; ceci est le manuel. Il se lit dan
 
 ---
 
+## Résumé
+
+`timeseries` traite des séries de relevés tels qu'ils arrivent : à des instants irréguliers, avec des trous là où l'instrument s'est tu, et des valeurs auxquelles personne ne croit. Elle les nettoie, les pose sur une grille régulière, comble ce qui peut l'être, les résume — sans jamais transformer un relevé manquant en zéro, ni laisser un relevé aberrant détruire un mois de statistiques.
+
+Elle répond à trois questions.
+
+**Que faire d'un relevé qui n'existe pas ?** Un trou n'est ni un zéro, ni une erreur, ni une ligne à supprimer. La bibliothèque le représente par un **NaV**, un NaN porteur d'un repère, que les calculs ignorent au lieu de s'y arrêter — là où un NaN ordinaire, réservé aux erreurs de calcul, continue de se propager. Une moyenne mensuelle survit à un jour manquant ; elle ne survit pas à une division par zéro, et c'est la différence qu'il fallait pouvoir exprimer.
+
+**Que faire d'un instrument qui n'est pas un métronome ?** Les relevés annoncés « toutes les heures » arrivent à 00:57, 02:03, 03:00. La régularisation les repose sur une grille de pas fixe, avec une tolérance pour les enregistreurs qui dérivent, et des trous là où aucun relevé n'est arrivé. Deux séries traitées au même pas deviennent alors comparables point à point, condition de tout calcul qui les met en relation.
+
+**Que faire d'un signal qui ne dit presque rien ?** Une porte, une consigne, un état, un compteur : la plupart des relevés n'apportent aucune information, puisque la valeur n'a pas bougé. La bibliothèque les réduit à leurs changements — le premier relevé, le dernier, et ce qui s'est passé entre les deux — et sait les reconstituer à la demande. Une bande morte permet de n'enregistrer qu'au-delà d'un écart donné, avec une perte bornée et connue. Et comme un silence prolongé se confond, après réduction, avec une valeur qui se maintient, `MarkSilences` le marque comme un trou avant que l'information ne disparaisse.
+
+Le reste du guide détaille ces trois réponses, les conventions de temps qui les sous-tendent, et ce que chaque opération coûte.
+
+---
+
 ## Table des matières
 
 1. [À quoi ressemble vraiment une série mesurée](#1-à-quoi-ressemble-vraiment-une-série-mesurée)
@@ -71,6 +87,8 @@ L'enregistreur annonce « toutes les heures » et rend ses relevés à 00:57, 02
 
 Chacun de ces cas est ordinaire, et chacun fausse silencieusement un résultat s'il est traité à la légère. Cette bibliothèque existe pour les traiter explicitement, et pour que ce traitement reste visible ensuite.
 
+À l'autre extrémité du problème se trouvent les séries qui ne disent presque rien. Une porte reste fermée des heures durant, une consigne ne bouge pas de la semaine, un état vaut 0 ou 1 : relever un tel signal chaque minute produit des milliers de points dont deux ou trois seulement portent une information. Les traiter comme une série ordinaire coûte de la mémoire, du calcul et de la lisibilité pour rien. Le chapitre 10 leur est consacré.
+
 ---
 
 ## 2. Le problème des données manquantes
@@ -99,11 +117,11 @@ Dans tout ce guide, un **trou** désigne un relevé manquant, c'est-à-dire un N
 2. **Une erreur se propage toujours.** Quand un trou et une erreur se rencontrent, l'erreur l'emporte.
 3. **Quand il ne reste rien à calculer, le résultat est un trou** — jamais zéro.
 
-La troisième règle appelle un point d'attention. La moyenne d'une série vide vaut NaV, pas 0. Une moyenne nulle est une affirmation sur les données : elle dit que les relevés se compensent. Sur une série vide, il n'y a rien à affirmer, et répondre zéro serait une invention qu'aucun lecteur ultérieur ne peut détecter.
+La troisième règle appelle un point d'attention. La moyenne d'une série vide vaut NaV, pas 0. Une moyenne nulle est une affirmation sur les données : elle dit que les relevés se compensent, ou, plus simplement, que la température en Celsius était au point de gel. Sur une série vide, il n'y a rien à affirmer, et répondre zéro serait une invention qu'aucun lecteur ultérieur ne peut détecter.
 
 ### 3.4 Ce que les règles produisent
 
-Les conséquences ne sont pas triviales:
+Les conséquences ne sont pas nécessairement triviales:
 
 | Situation | Résultat | Pourquoi |
 |---|---|---|
@@ -194,7 +212,7 @@ type Valued struct {
 }
 ```
 
-C'est ce que fait `sql.NullFloat64` en Go, `Option<f64>` en Rust, `double?` en C#, `Optional<Double>` en Java. Pourquoi ne pas l'avoir reprise ?
+C'est ce que font `sql.NullFloat64` en Go, `Option<f64>` en Rust, `double?` en C#, `Optional<Double>` en Java. Six raisons de ne pas l'avoir reprise.
 
 #### 1. Elle double la mémoire
 
@@ -224,11 +242,17 @@ Deux fois plus lent, et 8 Mo alloués à chaque appel. Sur un traitement qui enc
 
 Chaque fonction qui travaille sur les mesures doit connaître la structure et tester le booléen. Le traitement des absences se répète partout au lieu d'être porté par la valeur elle-même.
 
-#### 4. Un pointeur coûte davantage
+#### 4. Elle se contourne sans que rien ne proteste
+
+Le compilateur n'oblige jamais à lire `Valid`. Rien n'empêche d'écrire `v.Value` sur un relevé absent : on obtient zéro, un zéro qui a l'air d'une mesure et qui traverse tout le calcul sans laisser de trace. L'oubli n'est signalé ni à la compilation ni à l'exécution, et il se glisse dans la première fonction écrite un jour de fatigue.
+
+Un trou, lui, se défend tout seul. Il n'existe aucune façon de lire « la valeur derrière le NaV » : la valeur *est* le NaV, et toute opération qui l'ignore le propage ou l'écarte selon les règles du paquet. Le mauvais usage n'est pas rendu difficile, il est rendu impossible.
+
+#### 5. Un pointeur coûte davantage
 
 `*float64`, avec `nil` pour l'absence, semble élégant. Mais chaque point devient un pointeur de 8 octets **plus** la valeur pointée quelque part ailleurs, et surtout : un tableau d'un million de pointeurs est parcouru par le ramasse-miettes à chaque cycle, alors qu'un `[]float64` ne contient aucun pointeur et lui reste totalement invisible.
 
-#### 4. La valeur sentinelle est un piège
+#### 6. La valeur sentinelle est un piège
 
 Coder l'absence par −999, ou par 0, est la solution la plus ancienne. Elle fonctionne jusqu'au jour où une vraie mesure vaut −999 — et ce jour arrive. Le NaV, lui, ne peut pas être confondu avec une mesure : aucune opération sur des nombres réels ne le produit.
 
