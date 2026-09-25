@@ -11,9 +11,13 @@ version anglaise est dans [GUIDE.md](GUIDE.md).*
 
 *`timeseries` traite des séries de relevés tels qu’ils arrivent : à des instants irréguliers, avec des trous là où l’instrument s’est tu, et des valeurs auxquelles personne ne croit. Elle les nettoie, les pose sur une grille régulière, comble ce qui peut l’être, les résume — sans jamais transformer un relevé manquant en zéro, ni laisser un relevé aberrant détruire un mois de statistiques.*
 
+Elle traite aussi les signaux à faible contenu informatif — un état, une consigne, un compteur, qui répètent la même valeur des heures durant — en les ramenant à leurs changements, et sait les reconstituer ensuite.
+
+Le tout à l’échelle du parc et non du capteur isolé : les agrégats parcourent leurs données une fois et n’allouent rien, le chargement d’un lot est en $`n\log n`$ là où l’insertion point par point serait quadratique, et le coût par point reste constant jusqu’à dix millions de relevés. Les mesures sont dans le guide, avec les variantes écartées.
+
 ## Introduction
 
-`timeseries` est une bibliothèque Go qui traite des séries de relevés mesurés. Elle répond à trois questions.
+`timeseries` est une bibliothèque Go qui traite des séries de relevés mesurés. Elle répond à quatre questions.
 
 **Que faire d’un relevé qui n’existe pas ?** Un trou n’est ni un zéro, ni une erreur, ni une ligne à supprimer. La bibliothèque le représente par un **NaV**, un NaN porteur d’un repère, que les calculs ignorent au lieu de s’y arrêter — là où un NaN ordinaire, réservé aux erreurs de calcul, continue de se propager. Une moyenne mensuelle survit à un jour manquant ; elle ne survit pas à une division par zéro, et c’est la différence qu’il fallait pouvoir exprimer.
 
@@ -21,7 +25,9 @@ version anglaise est dans [GUIDE.md](GUIDE.md).*
 
 **Que faire d’un signal qui ne dit presque rien ?** Une porte, une consigne, un état, un compteur : la plupart des relevés n’apportent aucune information, puisque la valeur n’a pas bougé. La bibliothèque les réduit à leurs changements — le premier relevé, le dernier, et ce qui s’est passé entre les deux — et sait les reconstituer à la demande. Une bande morte permet de n’enregistrer qu’au-delà d’un écart donné, avec une perte bornée et connue. Et comme un silence prolongé se confond, après réduction, avec une valeur qui se maintient, `MarkSilences` le marque comme un trou avant que l’information ne disparaisse.
 
-Le reste du guide détaille ces trois réponses, les conventions de temps qui les sous-tendent, et ce que chaque opération coûte.
+**Que faire quand il y en a beaucoup ?** Un capteur ne pose pas de problème ; mille capteurs interrogés sur un an en posent. Les agrégats parcourent donc leurs données une seule fois et n’allouent rien, le chargement d’un lot trie une fois au lieu d’insérer point par point — une seconde contre deux minutes et demie pour un million de relevés — et un tampon réutilisable permet de boucler sur des centaines de séries sans qu’une allocation ait lieu. Chacun de ces choix est mesuré, et les variantes écartées sont conservées dans le dépôt avec leurs chiffres.
+
+Le reste du guide détaille ces quatre réponses, les conventions de temps qui les sous-tendent, et ce que chaque opération coûte.
 
 ## À quoi ressemble vraiment une série mesurée
 

@@ -90,7 +90,7 @@
 \renewenvironment{abstract}{\begin{quotation}\small\itshape\noindent}{\end{quotation}}
 
 \title{Guide de la bibliothèque \textit{timeseries}\\[0.3em]
-       \large Traitement des séries temporelles à trous}
+       \large Trous, signaux à faible contenu informatif, traitement de masse}
 \author{Frédéric Flament}
 \date{\today}
 
@@ -105,7 +105,7 @@
   \vspace*{5cm}
 
   {\LARGE\bfseries Guide de la bibliothèque \textit{timeseries}}\\[0.6em]
-  {\large Traitement des séries temporelles à trous}
+  {\large Trous, signaux à faible contenu informatif, traitement de masse}
 
   \vspace{3cm}
 
@@ -122,6 +122,17 @@ et des valeurs auxquelles personne ne croit. Elle les nettoie, les pose
 sur une grille régulière, comble ce qui peut l'être, les résume --- sans
 jamais transformer un relevé manquant en zéro, ni laisser un relevé
 aberrant détruire un mois de statistiques.
+
+Elle traite aussi les signaux à faible contenu informatif --- un état,
+une consigne, un compteur, qui répètent la même valeur des heures
+durant --- en les ramenant à leurs changements, et sait les reconstituer
+ensuite.
+
+Le tout à l'échelle du parc et non du capteur isolé : les agrégats
+parcourent leurs données une fois et n'allouent rien, le chargement d'un
+lot est en \(n\log n\) là où l'insertion point par point serait
+quadratique, et le coût par point reste constant jusqu'à dix millions de
+relevés. Les mesures sont dans le guide, avec les variantes écartées.
 \end{abstract}
 
 \vfill
@@ -132,7 +143,7 @@ aberrant détruire un mois de statistiques.
 \chapter{Introduction}\label{chap:introduction}
 
 \texttt{timeseries} est une bibliothèque Go qui traite des séries de
-relevés mesurés. Elle répond à trois questions.
+relevés mesurés. Elle répond à quatre questions.
 
 \textbf{Que faire d'un relevé qui n'existe pas ?} Un trou n'est ni un
 zéro, ni une erreur, ni une ligne à supprimer. La bibliothèque le
@@ -161,7 +172,17 @@ confond, après réduction, avec une valeur qui se maintient,
 \texttt{MarkSilences} le marque comme un trou avant que l'information ne
 disparaisse.
 
-Le reste du guide détaille ces trois réponses, les conventions de temps
+\textbf{Que faire quand il y en a beaucoup ?} Un capteur ne pose pas de
+problème ; mille capteurs interrogés sur un an en posent. Les agrégats
+parcourent donc leurs données une seule fois et n'allouent rien, le
+chargement d'un lot trie une fois au lieu d'insérer point par point
+--- une seconde contre deux minutes et demie pour un million de
+relevés --- et un tampon réutilisable permet de boucler sur des
+centaines de séries sans qu'une allocation ait lieu. Chacun de ces choix
+est mesuré, et les variantes écartées sont conservées dans le dépôt avec
+leurs chiffres.
+
+Le reste du guide détaille ces quatre réponses, les conventions de temps
 qui les sous-tendent, et ce que chaque opération coûte.
 
 \chapter{À quoi ressemble vraiment une série mesurée}\label{chap:serie-mesuree}
