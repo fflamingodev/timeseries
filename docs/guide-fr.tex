@@ -87,7 +87,7 @@
 % titre, sans intitulé : à cette place, le texte se présente seul.
 % L'italique n'est pas la convention de LaTeX, qui compose l'abstract en
 % corps droit réduit ; c'est celle de bien des revues.
-\renewenvironment{abstract}{\begin{quotation}\itshape\noindent}{\end{quotation}}
+\renewenvironment{abstract}{\begin{quotation}\small\itshape\noindent}{\end{quotation}}
 
 \title{Guide de la bibliothèque \textit{timeseries}\\[0.3em]
        \large Traitement des séries temporelles à trous}
@@ -99,16 +99,21 @@
 % --- Première page : titre, auteur, date et abstract ensemble ----------
 % report place le titre et l'abstract sur deux pages séparées ; ici tout
 % tient sur la première, la table des matières commençant en dessous.
-\thispagestyle{empty}
+\begin{titlepage}
 
 \begin{center}
-  {\LARGE\bfseries Guide de la bibliothèque \textit{timeseries}}\\[0.4em]
-  {\large Traitement des séries temporelles à trous}\\[2em]
-  {\large Frédéric Flament}\\[0.8em]
+  \vspace*{5cm}
+
+  {\LARGE\bfseries Guide de la bibliothèque \textit{timeseries}}\\[0.6em]
+  {\large Traitement des séries temporelles à trous}
+
+  \vspace{3cm}
+
+  {\large Frédéric Flament}\\[1em]
   {\today}
 \end{center}
 
-\vspace{2em}
+\vspace{3cm}
 
 \begin{abstract}
 \texttt{timeseries} traite des séries de relevés tels qu'ils arrivent :
@@ -119,7 +124,8 @@ jamais transformer un relevé manquant en zéro, ni laisser un relevé
 aberrant détruire un mois de statistiques.
 \end{abstract}
 
-\vspace{1.5em}
+\vfill
+\end{titlepage}
 
 \tableofcontents
 
