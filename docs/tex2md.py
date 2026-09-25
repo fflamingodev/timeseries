@@ -43,12 +43,13 @@ def main() -> int:
     if fin_titre == -1:
         print("le chapitre Introduction est introuvable", file=sys.stderr)
         return 1
-    resume = re.search(r"\*\*Abstract\*\*\s*</div>\s*(.*?)\n\n", texte[:fin_titre], re.S)
+    # L'abstract est le seul bloc de citation avant l'introduction.
+    resume = re.search(r"\n((?:> ?.*\n)+)", texte[:fin_titre])
     corps = ENTETE
     if resume:
-        # L'abstract vit dans un quotation ; pandoc en fait une citation.
+        # pandoc en fait une citation ; ici il se présente seul, sans intitulé.
         texte_resume = re.sub(r"^> ?", "", resume.group(1).strip(), flags=re.M)
-        corps += "## Résumé\n\n" + texte_resume + "\n\n"
+        corps += texte_resume + "\n\n"
     corps += texte[fin_titre:]
 
     open(MD, "w").write(corps)

@@ -82,6 +82,11 @@
 \renewcommand{\headrulewidth}{0.4pt}
 \renewcommand{\chaptermark}[1]{\markboth{\thechapter.\ #1}{}}
 
+% report compose l'abstract sur une page à lui, précédé d'un \titlepage,
+% et le coiffe du mot « Résumé ». Redéfini ici pour qu'il tienne sous le
+% titre, sans intitulé : à cette place, le texte se présente seul.
+\renewenvironment{abstract}{\begin{quotation}\noindent}{\end{quotation}}
+
 \title{Guide de la bibliothèque \textit{timeseries}\\[0.3em]
        \large Traitement des séries temporelles à trous}
 \author{Frédéric Flament}
@@ -103,15 +108,14 @@
 
 \vspace{2em}
 
-\begin{center}\textbf{\abstractname}\end{center}
-\begin{quotation}\noindent
+\begin{abstract}
 \texttt{timeseries} traite des séries de relevés tels qu'ils arrivent :
 à des instants irréguliers, avec des trous là où l'instrument s'est tu,
 et des valeurs auxquelles personne ne croit. Elle les nettoie, les pose
 sur une grille régulière, comble ce qui peut l'être, les résume --- sans
 jamais transformer un relevé manquant en zéro, ni laisser un relevé
 aberrant détruire un mois de statistiques.
-\end{quotation}
+\end{abstract}
 
 \vspace{1.5em}
 

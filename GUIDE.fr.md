@@ -9,8 +9,6 @@
 matières et sa bibliographie, se construit par `make guide-fr`. La
 version anglaise est dans [GUIDE.md](GUIDE.md).*
 
-## Résumé
-
 `timeseries` traite des séries de relevés tels qu’ils arrivent : à des instants irréguliers, avec des trous là où l’instrument s’est tu, et des valeurs auxquelles personne ne croit. Elle les nettoie, les pose sur une grille régulière, comble ce qui peut l’être, les résume — sans jamais transformer un relevé manquant en zéro, ni laisser un relevé aberrant détruire un mois de statistiques.
 
 ## Introduction
