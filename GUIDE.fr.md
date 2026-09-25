@@ -3,7 +3,7 @@
 
 # Guide de la bibliothèque *timeseries*
 
-**Traitement des séries temporelles à trous** — Frédéric Flament
+**Séries temporelles irrégulières, à faible contenu informatif, pour traitement de masse et *high availability*** — Frédéric Flament
 
 *Ce guide est écrit en LaTeX ; la version composée, avec sa table des
 matières et sa bibliographie, se construit par `make guide-fr`. La

@@ -17,9 +17,9 @@ MD = "GUIDE.fr.md"
 ENTETE = """<!-- Fichier produit par « make guide-fr-md » depuis docs/guide-fr.tex.
      Les modifications faites ici seront perdues à la prochaine génération. -->
 
-# Guide de la bibliothèque *timeseries*
+# {titre}
 
-**Traitement des séries temporelles à trous** — Frédéric Flament
+**{soustitre}** — {auteur}
 
 *Ce guide est écrit en LaTeX ; la version composée, avec sa table des
 matières et sa bibliographie, se construit par `make guide-fr`. La
@@ -27,7 +27,29 @@ version anglaise est dans [GUIDE.md](GUIDE.md).*
 
 """
 
+
+def metadonnee(source: str, nom: str) -> str:
+    """Lit \\newcommand{\\nom}{...} dans le LaTeX.
+
+    Le titre, le sous-titre et l'auteur ne sont écrits qu'à un endroit,
+    le préambule du document ; les recopier ici les ferait diverger au
+    premier remaniement.
+    """
+    m = re.search(r"\\newcommand\{\\" + nom + r"\}\{(.*?)\}\s*\n(?=\\|%|\n)",
+                  source, re.S)
+    if not m:
+        raise SystemExit(f"métadonnée {nom} introuvable dans {TEX}")
+    texte = m.group(1)
+    texte = re.sub(r"\\textit\{([^}]*)\}", r"*\1*", texte)
+    texte = re.sub(r"\\texttt\{([^}]*)\}", r"`\1`", texte)
+    return " ".join(texte.split())
+
 def main() -> int:
+    source = open(TEX).read()
+    entete = ENTETE.format(titre=metadonnee(source, "montitre"),
+                           soustitre=metadonnee(source, "monsoustitre"),
+                           auteur=metadonnee(source, "monauteur"))
+
     texte = subprocess.run(
         ["pandoc", TEX, "-f", "latex", "-t", "gfm", "--citeproc",
          "--bibliography=docs/references.bib", "--wrap=none",
@@ -45,7 +67,7 @@ def main() -> int:
         return 1
     # L'abstract est le seul bloc de citation avant l'introduction.
     resume = re.search(r"\n((?:> ?.*\n)+)", texte[:fin_titre])
-    corps = ENTETE
+    corps = entete
     if resume:
         # pandoc en fait une citation ; ici il se présente seul, sans intitulé.
         texte_resume = re.sub(r"^> ?", "", resume.group(1).strip(), flags=re.M)
