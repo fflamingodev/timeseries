@@ -128,23 +128,29 @@ une consigne, un compteur, qui répètent la même valeur des heures
 durant --- en les ramenant à leurs changements, et sait les reconstituer
 ensuite.
 
-Écrite en Go pour la simplicité d'écriture et la performance, elle reste
-simple à utiliser et a peu de concurrence.
+Écrite en Go pour la simplicité d'écriture et la performance, elle se
+distingue sur un point vérifiable : la distinction entre une donnée
+absente et une erreur de calcul est portée par la valeur elle-même, sans
+masque parallèle ni type optionnel. Elle traverse donc sans convention
+supplémentaire tout code qui accepte un \texttt{[]float64}, là où les
+solutions usuelles --- structure à champ booléen, pointeur nulisable,
+valeur sentinelle --- imposent une extraction avant chaque calcul, ou se
+contournent sans que rien ne proteste.
 
-Les coûts sont bornés et mesurés. Un relevé occupe 32 octets, un
-\texttt{time.Time} et un \texttt{float64} ; le tableau des mesures ne
-contenant aucun pointeur, il échappe au parcours du ramasse-miettes. Les
-agrégats lisent la série une fois et n'allouent rien : de l'ordre de
-1,2\,ns par relevé pour une moyenne, un extremum ou une somme, 2\,ns
-pour un écart-type ; seules la médiane et les percentiles trient une
-copie, à 50\,ns. Le chargement d'un lot est en \(n\log n\), avec
-reconnaissance en une passe d'un lot déjà ordonné, là où l'insertion
-point par point est quadratique --- une seconde contre deux minutes et
-demie pour un million de relevés en désordre. Un tampon réutilisable
-supprime les allocations d'une boucle sur des centaines de séries, et le
-coût par relevé reste constant jusqu'à dix millions de points, seuls les
-tris portant leur \(n\log n\). Les mesures et les variantes écartées
-figurent au chapitre~\ref{chap:performances}.
+Le comportement à l'échelle est borné, non constaté après coup. Un
+relevé occupe 32 octets, un \texttt{time.Time} et un \texttt{float64} ;
+le tableau des mesures ne contenant aucun pointeur, il échappe au
+parcours du ramasse-miettes. Les agrégats lisent la série une fois et
+n'allouent rien ; seules la médiane et les percentiles trient une copie,
+pour un temps par relevé de l'ordre de quarante fois celui d'une
+moyenne. Le chargement d'un lot est en \(n\log n\), avec reconnaissance
+en une passe d'un lot déjà ordonné, là où l'insertion point par point
+est quadratique : sur un million de relevés en désordre, deux ordres de
+grandeur séparent les deux. Un tampon réutilisable supprime les
+allocations d'une boucle sur des centaines de séries, et le temps par
+relevé reste constant jusqu'à dix millions de points, seuls les tris
+portant leur \(n\log n\). Les mesures, relatives à la machine d'essai,
+et les variantes écartées figurent au chapitre~\ref{chap:performances}.
 \end{abstract}
 
 \vfill
@@ -186,16 +192,19 @@ disparaisse.
 
 \textbf{Que faire quand il y en a beaucoup ?} Un capteur ne pose pas de
 problème ; mille capteurs interrogés sur un an en posent. Les agrégats
-parcourent donc leurs données une seule fois et n'allouent rien, le
-chargement d'un lot trie une fois au lieu d'insérer point par point
---- une seconde contre deux minutes et demie pour un million de
-relevés --- et un tampon réutilisable permet de boucler sur des
-centaines de séries sans qu'une allocation ait lieu. Chacun de ces choix
-est mesuré, et les variantes écartées sont conservées dans le dépôt avec
-leurs chiffres.
+parcourent donc leurs données une seule fois et n'allouent rien ; le
+chargement d'un lot trie une fois, en \(n\log n\), là où l'insertion
+point par point est quadratique --- deux ordres de grandeur d'écart sur
+un million de relevés en désordre ; et un tampon réutilisable permet de
+boucler sur des centaines de séries sans qu'une allocation ait lieu.
+Chacun de ces choix est mesuré, les variantes écartées sont conservées
+dans le dépôt avec leurs chiffres, et les mesures sont relatives à la
+machine d'essai : ce sont les rapports qui se transposent, pas les
+durées.
 
 Le reste du guide détaille ces quatre réponses, les conventions de temps
-qui les sous-tendent, et ce que chaque opération coûte.
+qui les sous-tendent, et ce que chaque opération demande en mémoire, en
+allocations et en parcours.
 
 \chapter{À quoi ressemble vraiment une série mesurée}\label{chap:serie-mesuree}
 
