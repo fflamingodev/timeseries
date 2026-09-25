@@ -85,7 +85,9 @@
 % report compose l'abstract sur une page à lui, précédé d'un \titlepage,
 % et le coiffe du mot « Résumé ». Redéfini ici pour qu'il tienne sous le
 % titre, sans intitulé : à cette place, le texte se présente seul.
-\renewenvironment{abstract}{\begin{quotation}\noindent}{\end{quotation}}
+% L'italique n'est pas la convention de LaTeX, qui compose l'abstract en
+% corps droit réduit ; c'est celle de bien des revues.
+\renewenvironment{abstract}{\begin{quotation}\itshape\noindent}{\end{quotation}}
 
 \title{Guide de la bibliothèque \textit{timeseries}\\[0.3em]
        \large Traitement des séries temporelles à trous}
