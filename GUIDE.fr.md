@@ -11,11 +11,13 @@ version anglaise est dans [GUIDE.md](GUIDE.md).*
 
 *`timeseries` traite des séries de relevés tels qu’ils arrivent : à des instants irréguliers, avec des trous là où la chaîne de transmission est rompue. Elle nettoie, régularise et compacte — sans que des relevés absents ou incomplets ne cassent la série.*
 
-Elle traite aussi les signaux à faible contenu informatif — un état, une consigne, un compteur, qui répètent la même valeur des heures durant — en les ramenant à leurs changements, et sait les reconstituer ensuite.
+Compactage des séries à faible contenu informatif — relevés à variabilité faible —, redéploiement sans perte.
 
-Écrite en Go pour la simplicité d’écriture et la performance, elle se distingue sur un point vérifiable : la distinction entre une donnée absente et une erreur de calcul est portée par la valeur elle-même, sans masque parallèle ni type optionnel. Elle traverse donc sans convention supplémentaire tout code qui accepte un `[]float64`, là où les solutions usuelles — structure à champ booléen, pointeur nulisable, valeur sentinelle — imposent une extraction avant chaque calcul, ou se contournent sans que rien ne proteste.
+Écrite en Go pour la simplicité d’écriture et la performance.
 
-Le comportement à l’échelle est borné, non constaté après coup. Un relevé occupe 32 octets, un `time.Time` et un `float64` ; le tableau des mesures ne contenant aucun pointeur, il échappe au parcours du ramasse-miettes. Les agrégats lisent la série une fois et n’allouent rien ; seules la médiane et les percentiles trient une copie, pour un temps par relevé de l’ordre de quarante fois celui d’une moyenne. Le chargement d’un lot est en $`n\log n`$, avec reconnaissance en une passe d’un lot déjà ordonné, là où l’insertion point par point est quadratique : sur un million de relevés en désordre, deux ordres de grandeur séparent les deux. Un tampon réutilisable supprime les allocations d’une boucle sur des centaines de séries, et le temps par relevé reste constant jusqu’à dix millions de points, seuls les tris portant leur $`n\log n`$. Les mesures, relatives à la machine d’essai, et les variantes écartées figurent au chapitre 15.
+Les trous dans les relevés sont traités par NaN-boxing : l’absence est inscrite dans la valeur elle-même, qui reste un flottant ordinaire. Une série traverse donc sans convention supplémentaire tout code qui accepte un `[]float64`, là où les solutions usuelles — structure à champ booléen, pointeur pouvant être nul, valeur sentinelle — imposent une extraction avant chaque calcul, ou se contournent au risque de produire des erreurs silencieuses.
+
+Les mesures tiennent dans un tableau de flottants sans pointeur : le ramasse-miettes n’a rien à y parcourir, quelle que soit la taille de la série. Les agrégats se lisent en une passe, et le temps par relevé reste constant tant que la série tient en mémoire vive — vérifié jusqu’à dix millions de relevés sur la machine d’essai ; seuls les tris prennent leur $`n\log n`$. Les mesures, relatives à la machine d’essai, et les variantes écartées figurent au chapitre 15.
 
 ## Introduction
 
