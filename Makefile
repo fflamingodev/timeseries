@@ -5,6 +5,7 @@
 # de sortie, produit par pandoc avec le préambule de docs/.
 #
 #   make guides     les deux PDF
+#   make guide-fr-md  régénère GUIDE.fr.md depuis le LaTeX
 #   make guide-fr   le guide français, source LaTeX (docs/guide-fr.tex)
 #   make guide-en   le guide anglais, converti depuis GUIDE.md
 #   make clean      efface les PDF et les fichiers intermédiaires de LaTeX
@@ -24,11 +25,11 @@ FLAGS   := --pdf-engine=xelatex \
 # xelatex vit dans /Library/TeX/texbin, absent du PATH d'un shell non interactif.
 export PATH := /Library/TeX/texbin:$(PATH)
 
-.PHONY: guides guide-fr guide-en clean
+.PHONY: guides guide-fr guide-fr-md guide-en clean
 
 guides: guide-fr guide-en
 
-guide-fr: docs/guide-fr.pdf
+guide-fr: docs/guide-fr.pdf GUIDE.fr.md
 guide-en: GUIDE.pdf
 
 # Le guide français est écrit en LaTeX : biblatex numérote la
@@ -36,6 +37,12 @@ guide-en: GUIDE.pdf
 docs/guide-fr.pdf: docs/guide-fr.tex docs/references.bib
 	cd docs && latexmk -xelatex -interaction=nonstopmode guide-fr.tex
 	@echo "→ $@"
+
+# GUIDE.fr.md est produit, pas écrit : la source est le LaTeX.
+guide-fr-md: GUIDE.fr.md
+
+GUIDE.fr.md: docs/guide-fr.tex docs/references.bib docs/tex2md.py
+	python3 docs/tex2md.py
 
 GUIDE.pdf: GUIDE.md docs/preamble.tex docs/guide.lua
 	$(PANDOC) $< -o $@ $(FLAGS) -V lang=en

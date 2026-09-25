@@ -89,22 +89,38 @@
 
 \begin{document}
 
-\maketitle
+% --- Première page : titre, auteur, date et abstract ensemble ----------
+% report place le titre et l'abstract sur deux pages séparées ; ici tout
+% tient sur la première, la table des matières commençant en dessous.
+\thispagestyle{empty}
 
-\begin{abstract}
+\begin{center}
+  {\LARGE\bfseries Guide de la bibliothèque \textit{timeseries}}\\[0.4em]
+  {\large Traitement des séries temporelles à trous}\\[2em]
+  {\large Frédéric Flament}\\[0.8em]
+  {\today}
+\end{center}
+
+\vspace{2em}
+
+\begin{center}\textbf{\abstractname}\end{center}
+\begin{quotation}\noindent
 \texttt{timeseries} traite des séries de relevés tels qu'ils arrivent :
 à des instants irréguliers, avec des trous là où l'instrument s'est tu,
 et des valeurs auxquelles personne ne croit. Elle les nettoie, les pose
 sur une grille régulière, comble ce qui peut l'être, les résume --- sans
 jamais transformer un relevé manquant en zéro, ni laisser un relevé
 aberrant détruire un mois de statistiques.
-\end{abstract}
+\end{quotation}
+
+\vspace{1.5em}
 
 \tableofcontents
 
 \chapter{Introduction}\label{chap:introduction}
 
-Elle répond à trois questions.
+\texttt{timeseries} est une bibliothèque Go qui traite des séries de
+relevés mesurés. Elle répond à trois questions.
 
 \textbf{Que faire d'un relevé qui n'existe pas ?} Un trou n'est ni un
 zéro, ni une erreur, ni une ligne à supprimer. La bibliothèque le
