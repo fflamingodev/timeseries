@@ -1,14 +1,22 @@
-# Construction des guides en PDF.
+# Construction des guides.
 #
-# Le Markdown reste la source : GitHub et Typora le rendent tel quel, et
-# git en suit les modifications ligne à ligne. LaTeX n'est qu'un format
-# de sortie, produit par pandoc avec le préambule de docs/.
+# Deux chaînes, parce que les deux guides n'ont pas la même source.
 #
-#   make guides     les deux PDF
-#   make guide-fr-md  régénère GUIDE.fr.md depuis le LaTeX
-#   make guide-fr   le guide français, source LaTeX (docs/guide-fr.tex)
-#   make guide-en   le guide anglais, converti depuis GUIDE.md
-#   make clean      efface les PDF et les fichiers intermédiaires de LaTeX
+#   Français : docs/guide-fr.tex est la source. latexmk en tire le PDF,
+#              et docs/tex2md.py en tire GUIDE.fr.md, que GitHub affiche.
+#              Ne pas modifier GUIDE.fr.md : il est écrasé.
+#
+#   Anglais  : GUIDE.md est la source. pandoc en tire GUIDE.pdf, avec le
+#              préambule docs/preamble.tex et le filtre docs/guide.lua.
+#
+#   make guides       tout
+#   make guide-fr     le PDF français et son Markdown
+#   make guide-fr-md  le Markdown français seul
+#   make guide-en     le PDF anglais
+#   make clean        efface les PDF et les fichiers de travail de LaTeX
+#
+# Il faut pandoc, une distribution TeX (xelatex, biber, latexmk), python3,
+# et la police Menlo pour les caractères semi-graphiques.
 
 PANDOC  := pandoc
 FLAGS   := --pdf-engine=xelatex \
