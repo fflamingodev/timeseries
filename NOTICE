@@ -1,0 +1,128 @@
+NOTICE
+======
+
+This repository holds two kinds of work, under two different terms, plus
+one file from a third party. The LICENSE file covers the first and not
+the others.
+
+
+1. The library — MIT License
+----------------------------
+
+Copyright (c) 2025-2026 Frédéric Flament.
+
+Except for the file named in section 3, everything in this repository is
+source code under the MIT License, as set out in LICENSE. That includes
+the Go packages and their tests, the example functions in
+example_test.go, the build scripts under docs/ (gendoc.py and tex2md.py)
+and the Makefile.
+
+
+2. The guide — all rights reserved
+----------------------------------
+
+Copyright (c) 2026 Frédéric Flament. All rights reserved.
+
+The guide is a separate work and is NOT licensed under the MIT License:
+
+    README.md, which is the guide itself
+    docs/guide-fr.tex
+    docs/annexes.tex
+    docs/references.bib
+    docs/guide-fr.pdf, and any PDF built from the above
+
+It may be read and printed for personal use. It may not be
+redistributed, republished, translated or adapted without written
+permission.
+
+Exception — the code listings. The code printed in the guide, including
+the API signatures in appendix B and the examples in appendix A, is
+extracted from the source files of the timeseries and notavalue
+packages. It stays under the MIT License of those packages, and may be
+copied, run and adapted accordingly. The same holds for the files that
+docs/gendoc.py writes into docs/generated/, which contain nothing but
+those extracts.
+
+
+3. Third-party file — CC BY-SA 3.0
+----------------------------------
+
+    docs/ieee.csl
+
+The IEEE citation style of the Citation Style Language project, by
+Michael Berkowitz and contributors. Licensed under a Creative Commons
+Attribution-ShareAlike 3.0 License:
+
+    https://creativecommons.org/licenses/by-sa/3.0/
+
+Included unchanged, from the copy distributed with TeX Live. It numbers
+the references of the Markdown guide the way biblatex numbers those of
+the PDF, so that a citation carries the same number in both.
+
+Developed for Usefulrisk — https://usefulrisk.com
+
+
+---
+
+
+AVIS
+====
+
+Ce dépôt contient deux œuvres distinctes, sous deux régimes distincts,
+plus un fichier tiers. Le fichier LICENSE porte sur la première et non
+sur les autres. En cas de divergence, le texte anglais ci-dessus fait
+foi.
+
+
+1. La bibliothèque — licence MIT
+--------------------------------
+
+Copyright (c) 2025-2026 Frédéric Flament.
+
+À l'exception du fichier nommé à la section 3, tout ce dépôt est du code
+source sous licence MIT, telle qu'énoncée dans LICENSE : les paquets Go
+et leurs tests, les fonctions Example de example_test.go, les scripts de
+construction de docs/ (gendoc.py, tex2md.py) et le Makefile.
+
+
+2. Le guide — tous droits réservés
+----------------------------------
+
+Copyright (c) 2026 Frédéric Flament. Tous droits réservés.
+
+Le guide est une œuvre séparée et n'est PAS sous licence MIT :
+
+    README.md, qui est le guide lui-même
+    docs/guide-fr.tex
+    docs/annexes.tex
+    docs/references.bib
+    docs/guide-fr.pdf, et tout PDF construit depuis ce qui précède
+
+Il peut être lu et imprimé pour un usage personnel. Il ne peut être
+redistribué, republié, traduit ni adapté sans autorisation écrite.
+
+Exception — les listings de code. Le code imprimé dans le guide, y
+compris les signatures de l'annexe B et les exemples de l'annexe A, est
+extrait des fichiers source des paquets timeseries et notavalue. Il
+reste sous la licence MIT de ces paquets, et peut donc être recopié,
+exécuté et adapté. Il en va de même des fichiers que docs/gendoc.py
+écrit dans docs/generated/, qui ne contiennent que ces extraits.
+
+
+3. Fichier tiers — CC BY-SA 3.0
+-------------------------------
+
+    docs/ieee.csl
+
+Le style de citation IEEE du projet Citation Style Language, de Michael
+Berkowitz et contributeurs. Sous licence Creative Commons Attribution
+- Partage dans les Mêmes Conditions 3.0 :
+
+    https://creativecommons.org/licenses/by-sa/3.0/deed.fr
+
+Repris sans modification de l'exemplaire distribué avec TeX Live. Il
+numérote les références du guide en Markdown comme biblatex numérote
+celles du PDF, de sorte qu'une citation porte le même numéro dans les
+deux.
+
+Développé pour Usefulrisk — https://usefulrisk.com
