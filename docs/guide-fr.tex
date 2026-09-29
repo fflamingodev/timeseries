@@ -95,6 +95,14 @@
 \newcommand{\montitre}{Guide de la bibliothèque \textit{timeseries}}
 \newcommand{\monsoustitre}{Séries temporelles irrégulières,  traitement de masse sous  \textit{high availability}, séries à faible contenu informatif}
 \newcommand{\monauteur}{Frédéric Flament}
+\newcommand{\monorganisation}{Développé pour Usefulrisk ---
+\href{https://usefulrisk.com}{usefulrisk.com}}
+% Deux régimes distincts : le code s'emprunte, le guide se lit. La
+% licence MIT du dépôt porte sur la bibliothèque, pas sur ce document.
+\newcommand{\malicencecode}{Bibliothèque sous licence MIT,
+\textcopyright{} 2025--2026 Frédéric Flament}
+\newcommand{\malicenceguide}{Ce guide : \textcopyright{} 2026
+Frédéric Flament, tous droits réservés}
 
 \begin{document}
 
@@ -118,37 +126,49 @@
 \vspace{3cm}
 
 \begin{abstract}
-\texttt{timeseries} traite des séries de relevés tels qu'ils arrivent :
-à des instants irréguliers, avec des trous là où la chaîne de
+La bibliothèque \texttt{timeseries} traite des séries de mesures matérielles, caractérisées par des intervalles irréguliers et des trous là où la chaîne de
 transmission est rompue. Elle nettoie, régularise et compacte --- sans
 que des relevés absents ou incomplets ne cassent la série.
 
-Compactage des séries à faible contenu informatif --- relevés à
-variabilité faible ---, redéploiement sans perte.
-
-Écrite en Go pour la simplicité d'écriture et la performance.
-
-Les trous dans les relevés sont traités par NaN-boxing : l'absence est
-inscrite dans la valeur elle-même, qui reste un flottant ordinaire. Une
-série traverse donc sans convention supplémentaire tout code qui accepte
-un \texttt{[]float64}, là où les solutions usuelles --- structure à
-champ booléen, pointeur pouvant être nul, valeur sentinelle ---
+Les trous dans les relevés sont traités par NaN-boxing : l'absence (Not-a-Value) est un flottant ordinaire. Une
+série traverse sans convention supplémentaire tout code qui accepte
+un \texttt{[]float64}, alors que les solutions usuelles --- structure à
+champ booléen, pointeur nullable, valeur sentinelle ---
 imposent une extraction avant chaque calcul, ou se contournent au risque
-de produire des erreurs silencieuses.
+de produire des erreurs silencieuses. Le procédé est éprouvé ailleurs :
+Prometheus distingue de la même façon, par la charge utile d'un NaN, une
+série arrêtée d'une erreur de calcul (\S\ref{sec:tsdb}).
 
-Les mesures tiennent dans un tableau de flottants sans pointeur : le
-ramasse-miettes n'a rien à y parcourir, quelle que soit la taille de la
-série. Les agrégats se lisent en une passe, et le temps par relevé reste
-constant tant que la série tient en mémoire vive --- vérifié jusqu'à dix
-millions de relevés sur la machine d'essai ; seuls les tris prennent
-leur \(n\log n\). Les mesures, relatives à la machine d'essai, et les
+Les mesures tiennent dans un tableau de flottants sans pointeur, les agrégats se lisent en une passe, et le traitement par enregistrement reste
+constant tant que la série tient en mémoire vive. Des mesures de performances et les
 variantes écartées figurent au chapitre~\ref{chap:performances}.
+
+La bibliothèque réduit sans perte  les séries à faible contenu informatif --- relevés à
+variabilité faible ---, avec redéploiement.
+
+Écrite en Go pour le rapport entre simplicité d'écriture/lecture et la performance.
+
 \end{abstract}
 
 \vfill
+
+% Le pied de page de titre : à qui appartient la bibliothèque, et sous
+% quelles conditions elle s'utilise. \vfill ci-dessus le pousse en bas
+% de la page, quelle que soit la longueur de l'abstract.
+\begin{center}
+  \small
+  \monorganisation\\[0.5em]
+  \malicencecode\\[0.2em]
+  \malicenceguide
+\end{center}
+
 \end{titlepage}
 
 \tableofcontents
+
+% Les tables portent un titre et une étiquette, donc elles se listent et
+% se citent par leur numéro (\ref{tab:...}).
+\listoftables
 
 \chapter{Introduction}\label{chap:introduction}
 
@@ -198,32 +218,11 @@ Le reste du guide détaille ces quatre réponses, les conventions de temps
 qui les sous-tendent, et ce que chaque opération demande en mémoire, en
 allocations et en parcours.
 
-\chapter{À quoi ressemble vraiment une série mesurée}\label{chap:serie-mesuree}
 
-Une série temporelle, dans un manuel, c'est une valeur par instant sur
-une grille régulière. Une série mesurée ne l'est jamais.
+\chapter{NaV pour « Not a Value » : stratégie pour les données
+manquantes}\label{chap:nav}
 
-L'enregistreur annonce « toutes les heures » et rend ses relevés à
-00:57, 02:03, 03:00, 04:01. Le capteur tombe pour une nuit. Une jointure
-laisse une ligne manquante. Une pile meurt en milieu d'après-midi et les
-derniers relevés avant la panne n'ont plus de sens. Une division par
-zéro en amont transforme une valeur en déchet. Un technicien remet un
-compteur à zéro et la série saute de dix mille.
-
-Chacun de ces cas est ordinaire, et chacun fausse silencieusement un
-résultat s'il est traité à la légère. Cette bibliothèque existe pour les
-traiter explicitement, et pour que ce traitement reste visible ensuite.
-
-À l'autre extrémité du problème se trouvent les séries qui ne disent
-presque rien. Une porte reste fermée des heures durant, une consigne ne
-bouge pas de la semaine, un état vaut 0 ou 1 : relever un tel signal
-chaque minute produit des milliers de points dont deux ou trois
-seulement portent une information. Les traiter comme une série ordinaire
-coûte de la mémoire, du calcul et de la lisibilité pour rien. Le
-chapitre~\ref{chap:reduction} leur est consacré.
-
-\chapter{Le problème des données manquantes}\label{chap:donnees-manquantes}
-
+\section{Introduction}
 Comment savoir qu'une donnée est manquante ? Ou plutôt, comment
 caractériser, dans les calculs, dans les rapports, et dans le
 déclenchement d'action, une donnée qui n'est pas là ? Une solution
@@ -232,9 +231,6 @@ pendant une durée fixée à l'avance. Si on examine les solutions
 apportées dans les logiciels courants, nous avons opté pour une solution
 utilisant le \emph{NaN-boxing}.
 
-\chapter{NaV pour « Not a Value » : une stratégie pour les données
-manquantes}\label{chap:nav}
-
 \section{Définition de NaV}
 
 La norme IEEE 754~\cite{ieee754}, qui régit les nombres flottants, laisse libre le
@@ -242,7 +238,7 @@ contenu de la mantisse d'un NaN : n'importe quelle valeur non nulle en
 fait un NaN valide. Nous utilisons cette liberté pour introduire un
 nombre particulier, le \textbf{NaV}, un NaN silencieux dont le bit 48 de
 la mantisse est allumé. Il reste un \texttt{float64} ordinaire : un
-\texttt{{[}{]}float64} n'a besoin d'aucun masque parallèle, et
+\texttt{[]float64} n'a besoin d'aucun masque parallèle, et
 \texttt{math.IsNaN} le reconnaît toujours, si bien que le code déjà
 écrit pour se prémunir des NaN se prémunit aussi des NaV.
 
@@ -255,6 +251,7 @@ n'a pas eu lieu.
   >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2500}}
   >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2500}}
   >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2500}}@{}}
+\caption{Origine d'un non-nombre et traitement qui en découle}\label{tab:origines}\\
 \toprule\noalign{}
 \begin{minipage}[b]{\linewidth}\raggedright
 \end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
@@ -274,7 +271,7 @@ absente, point rejeté & Ignoré \\
 \texttt{log(-1)} & Se propage \\
 \end{longtable}
 
-\section{Ce qui distingue le NaV du NaN}
+\section{Distinction entre NaV et NaN}
 
 \begin{itemize}
 \tightlist
@@ -310,7 +307,7 @@ que la température en Celsius était au point de gel. Sur une série vide,
 il n'y a rien à affirmer, et répondre zéro serait une invention qu'aucun
 lecteur ultérieur ne peut détecter.
 
-\section{Ce que les règles produisent}\label{sec:regles}
+\section{Règles de comportement}\label{sec:regles}
 
 Les conséquences ne sont pas nécessairement triviales:
 
@@ -318,6 +315,7 @@ Les conséquences ne sont pas nécessairement triviales:
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}@{}}
+\caption{Règles de comportement, cas par cas}\label{tab:regles}\\
 \toprule\noalign{}
 \begin{minipage}[b]{\linewidth}\raggedright
 Situation
@@ -330,11 +328,11 @@ Pourquoi
 \endhead
 \bottomrule\noalign{}
 \endlastfoot
-Moyenne de \texttt{{[}1,\ 2,\ NaV,\ 3{]}} & \texttt{2} & Le trou est
+Moyenne de \texttt{[1,\ 2,\ NaV,\ 3]} & \texttt{2} & Le trou est
 ignoré ; le diviseur vaut 3, pas 4 \\
-Moyenne de \texttt{{[}1,\ 2,\ NaN,\ 3{]}} & \texttt{NaN} & Une erreur en
+Moyenne de \texttt{[1,\ 2,\ NaN,\ 3]} & \texttt{NaN} & Une erreur en
 amont doit rester visible \\
-Moyenne de \texttt{{[}NaV,\ NaV{]}} & \texttt{NaV} & Rien à dire \\
+Moyenne de \texttt{[NaV,\ NaV]} & \texttt{NaV} & Rien à dire \\
 \texttt{Sub(5,\ NaV)} & \texttt{NaV} & Une différence exige ses deux
 termes ; rendre 5 reviendrait à lire le trou comme un zéro \\
 \texttt{Add(NaV,\ 5)} & \texttt{5} & Une somme tolère un terme absent \\
@@ -356,13 +354,22 @@ manquant. Une différence compare deux valeurs précises ; si l'une est
 inconnue, la différence l'est aussi, et toute autre réponse fabrique une
 variation que personne n'a mesurée.
 
-\section{Le NaN-boxing en détail}
+Ces règles ne sont pas une invention locale. SQL les applique depuis
+toujours : \texttt{sum} « computes the sum of the non-null input
+values », et « sum of no rows returns null, not zero as one might
+expect »~\cite{pgaggregates}. Un jour manquant n'empêche pas la somme du
+mois, et un mois sans aucun relevé ne vaut pas zéro. C'est mot pour mot
+la première et la troisième règle. §\ref{sec:bases} détaille ce que les
+bases de données font de l'absence, et le seul point où cette
+bibliothèque s'en écarte.
+
+\section{NaN-boxing en détail}
 
 Le NaN-boxing consiste à ranger de l'information \textbf{à l'intérieur}
 d'un nombre flottant, dans les bits que la norme IEEE 754 laisse libres.
 Pour comprendre où ils sont, il faut ouvrir un \texttt{float64}.
 
-\subsection{La structure d'un flottant}
+\subsection{Structure d'un flottant}
 
 Un \texttt{float64} occupe 64 bits, répartis par la norme IEEE-754 en
 trois champs :
@@ -395,7 +402,7 @@ sont toutes des NaN} --- dont la moitié, celles dites silencieuses, sont
 utilisables sans risque. Toutes indiscernables pour l'arithmétique, et
 toutes perdues si personne ne s'en sert.
 
-\subsection{Silencieux et signalant}
+\subsection{Silencieux et signalant}\label{sec:quiet}
 
 La norme distingue encore deux familles, par le bit de poids fort de la
 mantisse :
@@ -416,7 +423,7 @@ mantisse :
 Il reste donc \textbf{51 bits libres} dans la mantisse d'un NaN
 silencieux. C'est de la place perdue, que rien n'utilise.
 
-\subsection{Ce que la bibliothèque en fait}
+\subsection{Mise en œuvre dans la bibliothèque}
 
 \texttt{NaV} est un NaN silencieux dont \textbf{un} de ces bits libres
 est allumé :
@@ -446,7 +453,7 @@ technique :
 \tightlist
 \item
   \textbf{Aucun surcoût mémoire.} Un NaV est un \texttt{float64}. Un
-  tableau de mesures reste un \texttt{{[}{]}float64}, sans tableau
+  tableau de mesures reste un \texttt{[]float64}, sans tableau
   compagnon.
 \item
   \textbf{Le code existant continue de fonctionner.}
@@ -463,7 +470,7 @@ technique :
   casser de l'existant.
 \end{enumerate}
 
-\subsection{Ce que ça coûte}
+\subsection{Contreparties}
 
 \begin{itemize}
 \tightlist
@@ -479,9 +486,22 @@ technique :
   \textbf{C'est une technique peu connue.} Un relecteur qui découvre la
   bibliothèque doit d'abord comprendre ce qu'il lit --- ce chapitre
   existe pour ça.
+\item
+  \textbf{Cela ne vaut que pour les flottants.} Le procédé tient aux bits
+  libres du NaN d'IEEE 754~\cite{ieee754} ; un entier, un booléen, une
+  chaîne n'ont pas d'encodage inutilisé à détourner. La bibliothèque le
+  constate dès qu'elle quitte le flottant : une durée manquante est une
+  valeur sentinelle, \texttt{NaDuration}, et non un repère logé dans des
+  bits libres (chapitre~\ref{chap:temps}).
 \end{itemize}
 
-\section{Pourquoi pas une structure avec un booléen}
+Marquer l'absence dans n'importe quel type demande donc un marqueur en
+dehors de la valeur, sous l'une de deux formes : un champ booléen accolé
+à chaque valeur, dont la section suivante détaille le prix, ou un bit par
+valeur dans un masque séparé. C'est la voie des bases de données, et
+§\ref{sec:bases} dit comment elles la suivent.
+
+\section{Rejet de la structure à champ booléen}\label{sec:struct}
 
 C'est la solution la plus répandue :
 
@@ -497,7 +517,7 @@ C'est ce que font \texttt{sql.NullFloat64} en Go,
 C\#, \texttt{Optional\textless{}Double\textgreater{}} en Java. Six
 raisons de ne pas l'avoir reprise.
 
-\subsection{1. Elle double la mémoire}
+\subsection{Doublement de la mémoire}
 
 \begin{verbatim}
 float64                       :  8 octets
@@ -508,14 +528,14 @@ Le booléen n'occupe qu'un octet, mais l'alignement en impose huit : sept
 octets sont perdus par point. Sur un million de mesures, \textbf{8 Mo
 deviennent 16 Mo} ; sur dix millions, 80 deviennent 160.
 
-Un masque parallèle \texttt{{[}{]}bool} fait mieux --- 9 Mo --- mais au
+Un masque parallèle \texttt{[]bool} fait mieux --- 9 Mo --- mais au
 prix d'un second tableau à transporter, à découper et à trier en même
 temps que le premier, et qu'on oublie à la première refonte.
 
-\subsection{2. Elle coupe la bibliothèque du reste du monde}
+\subsection{Incompatibilité avec l'écosystème}
 
 Tout ce qui calcule sur des flottants, en Go, attend un
-\texttt{{[}{]}float64}: gonum, les transformées de Fourier, les
+\texttt{[]float64}: gonum, les transformées de Fourier, les
 bibliothèques de statistiques, et \texttt{notavalue} lui-même.
 
 Avec une structure, chaque appel exige d'abord une extraction --- une
@@ -525,6 +545,7 @@ boucle et une allocation proportionnelles à la série :
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}@{}}
+\caption{Moyenne sur un million de points : extraction contre passage direct}\label{tab:extraction}\\
 \toprule\noalign{}
 \begin{minipage}[b]{\linewidth}\raggedright
 Moyenne sur un million de points
@@ -537,22 +558,24 @@ Allocation
 \endhead
 \bottomrule\noalign{}
 \endlastfoot
-Structure, puis extraction en \texttt{{[}{]}float64} & 1 368 µs &
+Structure, puis extraction en \texttt{[]float64} & 1 368 µs &
 \textbf{8 Mo par appel} \\
 NaN-boxing, tableau passé tel quel & 623 µs & \textbf{aucune} \\
 \end{longtable}
 
 Deux fois plus lent, et 8 Mo alloués à chaque appel. Sur un traitement
 qui enchaîne moyenne, médiane, écart-type et percentiles, la facture se
-paie quatre fois.
+paie quatre fois. Les durées absolues valent pour la machine d'essai
+décrite au chapitre~\ref{chap:performances} ; c'est le rapport entre les
+deux lignes qui compte.
 
-\subsection{3. Elle coûte à chaque calcul}
+\subsection{Traitement répété à chaque calcul}
 
 Chaque fonction qui travaille sur les mesures doit connaître la
 structure et tester le booléen. Le traitement des absences se répète
 partout au lieu d'être porté par la valeur elle-même.
 
-\subsection{4. Elle se contourne sans que rien ne proteste}
+\subsection{Contournement possible}
 
 Le compilateur n'oblige jamais à lire \texttt{Valid}. Rien n'empêche
 d'écrire \texttt{v.Value} sur un relevé absent : on obtient zéro, un
@@ -567,23 +590,23 @@ opération qui l'ignore le propage ou l'écarte selon les règles du
 paquet. Le mauvais usage n'est pas rendu difficile, il est rendu
 impossible.
 
-\subsection{5. Un pointeur coûte davantage}
+\subsection{Pointeur nullable et ramasse-miettes}
 
 \texttt{*float64}, avec \texttt{nil} pour l'absence, semble élégant.
 Mais chaque point devient un pointeur de 8 octets \textbf{plus} la
 valeur pointée quelque part ailleurs, et surtout : un tableau d'un
 million de pointeurs est parcouru par le ramasse-miettes à chaque cycle,
-alors qu'un \texttt{{[}{]}float64} ne contient aucun pointeur et lui
+alors qu'un \texttt{[]float64} ne contient aucun pointeur et lui
 reste totalement invisible.
 
-\subsection{6. La valeur sentinelle est un piège}
+\subsection{Piège de la valeur sentinelle}
 
 Coder l'absence par −999, ou par 0, est la solution la plus ancienne.
 Elle fonctionne jusqu'au jour où une vraie mesure vaut −999 --- et ce
 jour arrive. Le NaV, lui, ne peut pas être confondu avec une mesure :
 aucune opération sur des nombres réels ne le produit.
 
-\subsection{Le tableau complet}
+\subsection{Tableau comparatif}
 
 \begin{longtable}[]{@{}
   >{\raggedright\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.2000}}
@@ -591,13 +614,14 @@ aucune opération sur des nombres réels ne le produit.
   >{\raggedright\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.2000}}
   >{\raggedright\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.2000}}
   >{\raggedright\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.2000}}@{}}
+\caption{Représentations de l'absence dans une série de flottants}\label{tab:representations}\\
 \toprule\noalign{}
 \begin{minipage}[b]{\linewidth}\raggedright
 Solution
 \end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
 Mémoire par point
 \end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Compatible \texttt{{[}{]}float64}
+Compatible \texttt{[]float64}
 \end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
 Invisible au GC
 \end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
@@ -609,7 +633,7 @@ Confusion possible
 \endlastfoot
 \textbf{NaN-boxing} & 8 o & oui & oui & non \\
 \texttt{struct\{float64;\ bool\}} & 16 o & non & oui & non \\
-\texttt{{[}{]}float64} + \texttt{{[}{]}bool} & 9 o & oui, mais le masque
+\texttt{[]float64} + \texttt{[]bool} & 9 o & oui, mais le masque
 suit à part & oui & non \\
 \texttt{*float64} & 8 o + la valeur & non & \textbf{non} & non \\
 Sentinelle −999 & 8 o & oui & oui & \textbf{oui} \\
@@ -620,9 +644,205 @@ tournent entre 0,6 et 0,8 ms par million de points, et l'écart est
 dominé par le reste du calcul. \textbf{Ce qui décide, c'est la mémoire
 et la compatibilité}, pas les nanosecondes.
 
-\section{Un avertissement}\label{sec:avertissement}
+\section{Le traitement de l'absence dans quelques bases de données courantes}\label{sec:bases}
 
-N'utilisez pas les opérateurs ordinaires sur des valeurs susceptibles
+La question est ancienne et elle a été tranchée ailleurs, à grande
+échelle. Un moteur de base de données doit accepter l'absence dans
+n'importe quel type, pas seulement dans un flottant, et il doit répondre
+à deux questions distinctes : ce qu'un calcul fait d'une valeur absente,
+et où le marqueur se loge. Les réponses au premier point sont
+remarquablement proches de celles de cette bibliothèque ; celles du
+second lui sont inaccessibles.
+
+\subsection{Sémantique : deux régimes}
+
+SQL sépare les opérateurs scalaires des agrégats, et les traite en sens
+inverse.
+
+Un opérateur scalaire propage : \texttt{NULL\ +\ 5} vaut NULL, et toute
+comparaison avec NULL vaut \emph{unknown} plutôt que vrai ou faux ---
+d'où la logique à trois valeurs et le \texttt{IS\ NULL}, qui existe
+parce que \texttt{=\ NULL} ne peut rien affirmer.
+
+Un agrégat saute : \texttt{sum} additionne les valeurs non nulles,
+\texttt{avg} divise par leur nombre et non par celui des lignes,
+\texttt{count(colonne)} compte les valeurs renseignées là où
+\texttt{count(*)} compte les lignes. Et une somme sans aucune ligne
+rend NULL, pas zéro~\cite{pgaggregates}. C'est la troisième règle de ce
+chapitre, à l'identique : quand il n'y a rien à calculer, le résultat
+est l'absence.
+
+Reste \texttt{coalesce}, que SQL fournit pour qui veut le zéro, et qui
+porte le même nom que la fonction correspondante de
+\texttt{notavalue}.
+
+\subsection{Point de divergence}
+
+\texttt{Add(NaV,\ 5)} rend 5, là où \texttt{NULL\ +\ 5} vaut NULL. La
+divergence est apparente : \texttt{Add} n'est pas le \texttt{+} de SQL,
+c'est sa primitive d'accumulation, et l'accumulateur de SQL est
+\texttt{sum}, qui saute les absents exactement de la même façon. Le
+\texttt{+} scalaire de SQL a pour équivalent \texttt{Sub},
+\texttt{Mul}, \texttt{Div}, qui propagent tous l'absence.
+
+Une chose en revanche n'a pas d'équivalent : la deuxième règle. Un
+calcul rompu n'y produit pas une valeur qui se propage, il lève une
+erreur et la transaction s'arrête --- \texttt{0/0} est une
+\emph{division by zero}, non un NaN silencieux. SQL peut se le
+permettre : il a une transaction à annuler. Une bibliothèque appelée au
+milieu d'un traitement de masse n'a pas ce recours, et le NaN qui se
+propage est ce qui tient lieu d'erreur transportable.
+
+\subsection{Stockage du marqueur}
+
+\textbf{PostgreSQL} range le marqueur hors de la valeur, et non dans un
+booléen accolé à elle. Chaque ligne porte, juste après son en-tête fixe,
+une \emph{null bitmap} d'un bit par colonne --- 1 pour renseigné, 0 pour
+NULL --- et cette carte n'est présente que si l'en-tête signale au moins
+un NULL~\cite{pgstorage}. Une colonne NULL n'occupe alors aucun octet
+pour sa valeur : le bit remplace la donnée au lieu de s'y ajouter.
+
+\textbf{SQLite} n'a pas de carte, parce qu'il n'a pas de types de
+colonne fixes : l'en-tête de chaque enregistrement énumère le type de
+chaque valeur, et l'absence est l'un de ces types. Le type sérialisé 0
+signifie « la valeur est NULL » et occupe zéro octet de
+contenu~\cite{sqliteformat}. Le marqueur ne coûte donc rien de plus que
+ce que toute valeur paie déjà, et fait l'économie du contenu.
+
+\textbf{Apache Arrow}, le format en mémoire derrière une bonne part des
+outils analytiques actuels, tient un tampon séparé : un bit par
+emplacement, 1 pour renseigné, 0 pour absent. Avec une réserve que la
+spécification énonce elle-même --- « a null value may occupy a
+non-empty memory space in the data buffer », et le contenu de cet
+emplacement est alors indéfini~\cite{arrowformat}. Sur un type de
+largeur fixe, un absent paie donc le bit \emph{et} la place.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Emplacement du marqueur d'absence selon le
+système}\label{tab:marqueurs}
+\begin{tabular}{@{}p{4.2cm}p{4.6cm}p{5.4cm}@{}}
+\toprule
+\textbf{Système} & \textbf{Où est le marqueur} & \textbf{Ce que coûte une
+valeur absente} \\
+\midrule
+NaN-boxing & dans la valeur & rien : le flottant est le marqueur \\
+PostgreSQL & 1 bit par colonne, en-tête de ligne & 1 bit, et aucun octet
+de contenu \\
+SQLite & type sérialisé par valeur, en-tête d'enregistrement & rien de
+plus qu'une valeur présente, et aucun contenu \\
+Apache Arrow & 1 bit par valeur, tampon séparé & 1 bit \emph{et}
+l'emplacement, réservé \\
+\texttt{struct\{float64;\ bool\}} & accolé à la valeur & 8 octets, par
+alignement \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Deux des trois font mieux que tout ce que la table~\ref{tab:representations}
+avait examiné.
+
+\subsection{Bases de séries temporelles}\label{sec:tsdb}
+
+Ce sont les plus proches parentes du sujet : elles ne stockent que des
+couples instant-mesure, et rencontrent donc le problème de ce guide dans
+sa forme pure. Aucune des deux n'a de NULL au sens relationnel. Un trou
+y est l'absence de relevé, pas un relevé marqué.
+
+\textbf{Prometheus} a pourtant eu besoin de dire autre chose que « pas
+de relevé » : quand une cible disparaît, il faut distinguer « la série
+s'est arrêtée » de « rien n'est encore arrivé ». Sans quoi la dernière
+valeur connue continue d'être rendue pendant la fenêtre de rattrapage,
+et un graphique montre une machine éteinte comme si elle fonctionnait
+encore. La série est donc marquée périmée, et « if a query is evaluated
+at a sampling timestamp after a time series is marked as stale, then no
+value is returned for that time series »~\cite{promstaleness}.
+
+Ce qui nous intéresse est la façon dont ce marqueur est représenté. Elle
+est celle de ce chapitre~\cite{promvalue} :
+
+\begin{verbatim}
+// NormalNaN is a quiet NaN. This is also math.NaN().
+NormalNaN uint64 = 0x7ff8000000000001
+
+// StaleNaN is a signaling NaN, due to the MSB of the
+// mantissa being 0.
+StaleNaN uint64 = 0x7ff0000000000002
+
+func IsStaleNaN(v float64) bool {
+    return math.Float64bits(v) == StaleNaN
+}
+\end{verbatim}
+
+Deux NaN distingués par leur charge utile, l'un pour l'erreur de calcul,
+l'autre pour l'absence, et un prédicat pour les séparer. C'est
+exactement \texttt{IsNaV} et \texttt{IsStdNaN}, atteint séparément et
+déployé à très grande échelle. Le procédé décrit ici n'est donc pas une
+curiosité locale.
+
+Deux différences méritent d'être relevées. Prometheus prend un NaN
+\emph{signalant} --- bit de poids fort de la mantisse à zéro, cf.
+§\ref{sec:quiet} --- là où \texttt{notavalue} prend un NaN silencieux
+marqué. Il peut se le permettre parce que son marqueur n'entre jamais
+dans un calcul : il est filtré à la lecture. Un NaV, lui, traverse
+\texttt{Add}, \texttt{Sub} et les agrégats, et doit donc être silencieux.
+Et Prometheus compare la totalité des bits, ce qui ferme la porte à
+d'autres charges utiles ; le masque sur un seul bit la laisse ouverte.
+
+\textbf{InfluxDB} ne marque rien dans le stockage : un champ qui n'a pas
+été écrit n'existe pas à cet instant. En revanche il tranche à la
+lecture, et la clause \texttt{fill()} d'InfluxQL énumère les mêmes
+choix que la table~\ref{tab:interpolation} --- \texttt{null},
+\texttt{previous}, \texttt{linear}, \texttt{none}, ou une valeur
+numérique~\cite{influxfill}. Deux d'entre eux se lisent comme un
+avertissement : \texttt{fill(none)} supprime l'horodatage avec la valeur,
+donc le trou lui-même, ce que \texttt{Regularize} refuse de faire ; et
+\texttt{fill(0)} est précisément le geste contre lequel cette
+bibliothèque existe.
+
+Le point remarquable est ailleurs : le comportement par défaut
+d'InfluxDB est \texttt{fill(null)}. Sur une fenêtre sans données, il
+rend un horodatage et une absence, pas un zéro. La même décision que
+celle de ce chapitre, prise par les deux moteurs de séries temporelles
+les plus répandus.
+
+\subsection{Passage du moteur à Go}
+
+La représentation économique du moteur ne survit pas au transport. Un
+pilote qui rend une colonne \texttt{double\ precision} nullable ne peut
+pas la déposer dans un \texttt{float64} : la bibliothèque standard
+refuse, et le message ne laisse pas de doute ---
+\texttt{converting\ NULL\ to\ float64\ is\ unsupported}. Il faut élargir
+le type, et \texttt{database/sql} le fait exactement sous la forme que
+§\ref{sec:struct} écarte~\cite{gosql} :
+
+\begin{verbatim}
+type NullFloat64 struct {
+    Float64 float64
+    Valid   bool
+}
+\end{verbatim}
+
+La forme générique ajoutée depuis, \texttt{sql.Null[T]}, a la même
+structure : une valeur, un booléen. Le bit de la \emph{null bitmap}
+devient donc un champ de huit octets dès la frontière, alignement
+compris, et le tableau compact du moteur arrive en Go sous forme de
+tranche de structures --- avec les six conséquences déjà énumérées.
+
+C'est là que se mesure l'intérêt du procédé. Aucune des trois
+représentations de la table~\ref{tab:marqueurs} n'est à la portée d'une
+bibliothèque : un
+moteur maîtrise sa représentation du premier octet sur disque au dernier
+en mémoire, et peut donc décider que l'absence vit à côté de la donnée.
+\texttt{timeseries} rend des \texttt{[]float64} à du code qu'elle ne
+connaît pas. C'est cette tranche-là, sans carte à transporter à côté
+d'elle, qui est la contrainte --- et le NaN-boxing est ce qui permet de
+la tenir, au point précis où \texttt{database/sql} doit renoncer.
+
+\section{Avertissement}\label{sec:avertissement}
+
+Il ne faut pas utiliser les opérateurs ordinaires sur des valeurs susceptibles
 d'être absentes. La charge utile que porte un NaN résultat est laissée
 au processeur, et les processeurs ne s'accordent pas : sur certains,
 \texttt{NaV\ -\ 5} ressort encore marqué comme NaV, sur d'autres le
@@ -631,21 +851,20 @@ repère est perdu. Passez par les \texttt{Add}, \texttt{Sub},
 font du résultat une propriété du code et non de la machine qui
 l'exécute.
 
-\chapter{Le temps}\label{chap:temps}
+\chapter{Temps}\label{chap:temps}
 
-\section{Comment un instant est stocké}
+\section{Stockage d'un instant}
 
-Les horodatages sont des \texttt{time.Time}, conservés tels que donnés,
-fuseau compris. Un point pèse donc 32 octets là où un compte de
-nanosecondes en prendrait 16. La bibliothèque standard de Go a été
+Les horodatages sont des \href{https://pkg.go.dev/time\#Time}{\texttt{time.Time}},
+tels que définis par la bibliothèque standard de Go~\cite{gotime}. Celle-ci a été
 déterminante dans le choix du langage pour le traitement des données
 temporelles.\texttt{time.Time} est un type bien développé en Go ---
-fuseaux, formatage, comparaison, bibliothèque standard. La bibliothèque
-ne convertit jamais une série dans un autre fuseau de sa propre
-initiative : le fuseau que porte un relevé est une affirmation sur
-l'endroit où il a été pris.
+fuseaux, formatage, comparaison sont dans la bibliothèque
+standard\footnote{Voir §\ref{sec:unix} pour la lecture d'horloge
+monotone, et la différence entre \emph{monotonic clock} et \emph{wall
+clock}.}. Le cadre est l'utilisation de Unix Time dans toute la chaîne de traitement, le formatage en RFC3339 appliqué partout là où le passage par le texte est nécessaire.
 
-\section{Le temps Unix, sous les horodatages}
+\section{Temps Unix, sous les horodatages}\label{sec:unix}
 
 Sous la surface, tous les systèmes qui échangent des dates s'accordent
 sur une même origine : \textbf{le 1ᵉʳ janvier 1970 à 00:00:00 UTC}. Un
@@ -658,6 +877,7 @@ capteurs.
 Quelques repères pour lire un tel nombre :
 
 \begin{longtable}[]{@{}lll@{}}
+\caption{Lectures du temps Unix}\label{tab:unix}\\
 \toprule\noalign{}
 Nombre & Unité & Instant \\
 \midrule\noalign{}
@@ -699,13 +919,15 @@ nanoseconde près. Le nombre est exact, la mesure ne l'est pas forcément
 l'améliorer.
 
 En Go, un \texttt{time.Time} porte davantage qu'un simple compte :
-l'instant absolu, un fuseau, et parfois une lecture d'horloge monotone
---- insensible aux changements d'heure du système --- que la
-bibliothèque standard utilise pour mesurer des durées. Les horodatages
+l'instant absolu, un fuseau, et parfois une
+\href{https://pkg.go.dev/time\#hdr-Monotonic_Clocks}{lecture d'horloge
+monotone} --- insensible aux changements d'heure du système, là où la
+lecture d'horloge murale les subit --- que la bibliothèque standard
+utilise pour mesurer des durées. Les horodatages
 venus d'une base ou d'un capteur n'en ont pas ; c'est sans conséquence
 ici.
 
-\section{RFC 3339, la forme écrite}\label{sec:rfc}
+\section{RFC 3339, forme écrite}\label{sec:rfc}
 
 Le temps Unix est un nombre ; il faut aussi une forme écrite, lisible
 par un humain et non ambiguë pour une machine. C'est la \textbf{RFC
@@ -750,7 +972,7 @@ calendaire effectué après ce trajet retombera sur un décalage figé
 plutôt que sur un vrai fuseau. \textbf{Quand les journées locales
 comptent, regroupez avant de sérialiser}, pas après.
 
-\section{Une durée qui n'existe pas}
+\section{Durée qui n'existe pas}
 
 Le premier point d'une série n'a pas de prédécesseur, donc l'intervalle
 qui le précède n'existe pas. C'est \texttt{NaDuration}, le pendant de
@@ -764,6 +986,7 @@ absurde de −2562047h47m16s, et \texttt{IsNaDuration} le reconnaît.
   >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2500}}
   >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2500}}
   >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2500}}@{}}
+\caption{Conventions de fenêtre : régularisation et regroupement}\label{tab:conventions}\\
 \toprule\noalign{}
 \begin{minipage}[b]{\linewidth}\raggedright
 \end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
@@ -791,7 +1014,7 @@ appartient à la journée qui commence, comme le dirait n'importe qui.
 Les deux datent leur point à la \textbf{fin} de la période, si bien que
 tous deux se lisent « tout ce qui précède jusqu'ici ».
 
-\section{Une grille régulière s'aligne sur l'UTC}\label{sec:utc}
+\section{Alignement d'une grille régulière sur l'UTC}\label{sec:utc}
 
 La grille ne s'aligne pas sur le premier relevé --- ce qui rendrait deux
 séries incomparables --- mais sur le temps absolu, c'est-à-dire sur
@@ -816,8 +1039,7 @@ locales qui comptent --- un rapport quotidien pour une équipe sur place
 ---, utilisez \texttt{DownscaleDaily}, qui travaille dans le calendrier,
 ou décalez les horodatages avant de régulariser.
 
-\section{Les périodes calendaires, et les jours qui ne durent pas 24
-heures}
+\section{Périodes calendaires: durées irrégulières}
 
 Les frontières du calendrier n'ont de sens qu'en un lieu : la famille
 \texttt{Downscale} les calcule donc dans le fuseau du premier relevé de
@@ -830,7 +1052,7 @@ avancent à minuit, et la journée s'ouvre à 01:00. Bâtir une période sur
 un minuit qui n'a jamais eu lieu la fermerait une heure trop tôt, et
 toutes les périodes suivantes avec elle.
 
-\section{La précision}
+\section{Précision}
 
 Les statistiques sur les horodatages sont calculées sur des écarts au
 premier point, et non sur des nanosecondes depuis 1970.
@@ -842,9 +1064,9 @@ au mauvais endroit l'instant moyen de trois relevés espacés de deux
 nanosecondes. Compter depuis le début de la série garde les nombres
 petits et le résultat exact.
 
-\chapter{Une série}\label{chap:serie}
+\chapter{Série}\label{chap:serie}
 
-\section{Les types}
+\section{Types}
 
 \begin{verbatim}
 type Datum struct {                 // un relevé
@@ -863,7 +1085,7 @@ Une \texttt{TimeSeries} est une suite de \texttt{DataUnit}, plus un
 \texttt{ID}, un \texttt{Name} pour les humains et un \texttt{Comment}
 qui retrace sa provenance.
 
-\section{L'invariant}
+\section{Invariant}
 
 \textbf{À tout instant, les points sont dans l'ordre chronologique et
 chaque delta s'accorde avec cet ordre.}
@@ -883,9 +1105,10 @@ impossible vaut mieux que le signaler.
 La lecture passe par \texttt{Len}, \texttt{At}, \texttt{First},
 \texttt{Last}, \texttt{Range}, \texttt{Meas} et \texttt{MeasTo}.
 
-\section{Le chargement, et ce qu'il coûte}
+\section{Chargement et son coût}\label{sec:chargement}
 
 \begin{longtable}[]{@{}ll@{}}
+\caption{Chargement d'un million de relevés en désordre}\label{tab:chargement}\\
 \toprule\noalign{}
 Un million de relevés en désordre & Temps \\
 \midrule\noalign{}
@@ -909,6 +1132,11 @@ il le constate en une passe et saute le tri.
 \texttt{Add} pour le relevé qui arrive seul d'un flux,
 \texttt{AddBatchData} pour tout ce qu'on a déjà en main.
 
+Ces durées ont été relevées sur la machine d'essai du
+chapitre~\ref{chap:performances}. Ce qui se transporte d'une machine à
+l'autre n'est pas la seconde ni les deux minutes et demie, mais le
+quadruplement à chaque doublement d'un côté et le doublement de l'autre.
+
 \section{Alimenter les agrégats sans allouer}
 
 \begin{verbatim}
@@ -923,7 +1151,7 @@ for _, ts := range all {
 \texttt{MeasTo} remplit un tampon que vous gardez, ce qui compte dès
 qu'on boucle sur des centaines de séries.
 
-\chapter{Le résumé}\label{chap:resume-stats}
+\chapter{Statistiques de base}\label{chap:resume-stats}
 
 \texttt{Stats()} renvoie trente champs, calculés à la demande et jamais
 mis en cache --- un résumé ne peut donc jamais décrire une série qui a
@@ -939,6 +1167,7 @@ Regroupés par la question à laquelle ils répondent :
 \begin{longtable}[]{@{}
   >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.5000}}
   >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.5000}}@{}}
+\caption{Champs de \texttt{BasicStats}, par question posée}\label{tab:basicstats}\\
 \toprule\noalign{}
 \begin{minipage}[b]{\linewidth}\raggedright
 Question
@@ -984,23 +1213,18 @@ Une statistique qui ne peut pas être calculée vaut NaV, jamais zéro. Un
 relevé unique n'a pas d'écart-type ; une série de trous n'a pas de
 moyenne.
 
-\chapter{Le nettoyage}\label{chap:nettoyage}
+\chapter{Nettoyage}\label{chap:nettoyage}
 
-\section{Ce qu'est un rejet}
+\section{Définition d'un rejet}
 
-Un point rejeté n'est ni une erreur ni une suppression : c'est un relevé
-que l'appelant a décidé de ne plus croire. Il devient un trou et garde
-sa place dans le temps.
+Un point rejeté par une fonction de nettoyage n'est ni une erreur ni une suppression et produit une série temporelle dédiée.
+Parfois c'est dans les données rejetées que se trouve l'information: fréquence des pannes, maintenance préventive, déclenchement d'alarmes.
 
-La version précédente remplaçait les points rejetés par un NaN ordinaire
-: une valeur aberrante dans un mois rendait NaN toutes les statistiques
-de ce mois. Avec un trou, la moyenne continue sur ce qui reste, et les
-compteurs disent combien a été écarté.
 
 Les relevés rejetés reviennent dans une série à part, avec leurs valeurs
-d'origine : rien n'est perdu, et la décision reste révisable.
+d'origine.
 
-\section{Ce qui n'est jamais rejeté}
+\section{Valeurs jamais rejetées}
 
 \begin{itemize}
 \tightlist
@@ -1008,18 +1232,19 @@ d'origine : rien n'est perdu, et la décision reste révisable.
   \textbf{Un trou} : il n'y avait rien à juger.
 \item
   \textbf{Une valeur cassée} : le nettoyage traite des mesures
-  invraisem- blables, et déguiser une erreur en absence revient à la
+  invraisemblables, et déguiser une erreur en absence revient à la
   perdre.
 \end{itemize}
 
 Ni l'un ni l'autre ne participent au calcul des seuils.
 
-\section{Les quatre méthodes}
+\section{Quatre méthodes}
 
 \begin{longtable}[]{@{}
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}@{}}
+\caption{Méthodes de nettoyage}\label{tab:nettoyage}\\
 \toprule\noalign{}
 \begin{minipage}[b]{\linewidth}\raggedright
 Méthode
@@ -1032,11 +1257,10 @@ Seuil
 \endhead
 \bottomrule\noalign{}
 \endlastfoot
-\texttt{RemoveOutbounds(min,\ max)} & Fixe & L'invraisemblable est connu
-d'avance : une pluie négative, une température au-dessus de
+\texttt{RemoveOutbounds(min,\ max)} & Fixe & Bornes fixes: une pluie négative, une température au-dessus de
 l'ébullition \\
 \texttt{RemovePercentileOutliers(low,\ high)} & Percentiles des relevés
-& L'échelle est inconnue et les queues sont suspectes \\
+& Elimination des queues de distribution \\
 \texttt{RemoveZScoreOutliers(level)} & Moyenne ± level × écart-type &
 Les relevés se dispersent symétriquement ; 3 est l'usage \\
 \texttt{RemovePeirceOutliers()} & Critère de Peirce & Aucun seuil ne
@@ -1053,8 +1277,8 @@ ts.RemovePercentileOutliers(nav.NaV, 95)  // couper le haut seulement
 
 \textbf{Sur les percentiles :} ils décrivent les relevés dont on
 dispose, donc les seuils bougent avec les données et quelque chose est
-toujours rejeté. C'est un outil différent des bornes fixes, pas un
-meilleur.
+toujours rejeté. C'est un outil différent des bornes fixes.
+
 
 \textbf{Sur le critère de Peirce :} il ne prend aucun seuil. Il le
 déduit de la taille de l'échantillon, à travers une table publiée par
@@ -1065,27 +1289,36 @@ cette taille peut légitimement perdre. Il est plus sévère sur les petits
 Sur l'exemple classique d'enseignement, il condamne exactement les deux
 relevés bas, 90 et 89.
 
-\chapter{La régularisation}\label{chap:regularisation}
+\chapter{Régularisation}\label{chap:regularisation}
 
-\section{La grille}
+\section{Grille}
 
 \begin{verbatim}
 hourly, err := ts.Regularize(time.Hour, timeseries.AggMean)
 \end{verbatim}
 
-Les fenêtres ferment à droite et s'alignent sur l'horloge (\S\ref{sec:utc}). Une
-fenêtre qui n'a rien reçu devient un trou : une grille régulière a un
+Une série régularisée est une série dont les temps d'horodatage sont espacés régulièrement. La durée entre l'horodatage précédent et l'horodatage courant forme un 
+intervalle semi-ouvert à gauche (fermé à droite).
+
+Les fonctions de régularisation créent effectivement ce qui s'appelle une \textit{série temporelle}, en ce sens que chaque mesure est séparée des autres par une durée identifiable.
+On va parler de moyenne quotidienne, de prix à la fin du mois, etc.
+Les fenêtres ferment à droite et s'alignent sur l'horloge (\S\ref{sec:utc}).
+
+Quand l'application reçoit plusieurs mesures dans la fenêtre demandée, un choix doit être fait sur le traitement des mesures intermédiaires. Une collection d'agrégateurs a été mise en place à cet effet (§\ref{sec:agregateurs}, table~\ref{tab:agregateurs}).
+
+Une fenêtre qui n'a rien reçu devient un trou : une grille régulière a un
 point par pas, et un pas sans relevé reste un pas. Rien n'est émis avant
 le premier relevé ni après le dernier --- une série ne dit rien de ce
 qui précède son début ni de ce qui suit sa fin.
 
-\section{La tolérance}
+\section{Tolérance}
 
 Un enregistreur censé rendre son relevé à l'heure pile et qui le rend à
 10:00:04 n'a pas manqué sa fenêtre. Sans tolérance, il tombe une fenêtre
 trop tard :
 
 \begin{longtable}[]{@{}lll@{}}
+\caption{Effet d'une tolérance de cinq minutes}\label{tab:tolerance}\\
 \toprule\noalign{}
 Fenêtre & Sans tolérance & 5 minutes de tolérance \\
 \midrule\noalign{}
@@ -1102,19 +1335,31 @@ Le signal horaire devient une alternance de trous et de moyennes
 fausses. La tolérance doit rester inférieure au pas, sans quoi un relevé
 appartiendrait à deux fenêtres.
 
-\section{Les agrégateurs}
+\section{Agrégateurs}\label{sec:agregateurs}
 
 \begin{longtable}[]{@{}
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}@{}}
+\caption{Agrégateurs de fenêtre}\label{tab:agregateurs}\\
 \toprule\noalign{}
 \begin{minipage}[b]{\linewidth}\raggedright
 Agrégateur
 \end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
 Renvoie
 \end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Pour
+Exemple d'utilisation
+\end{minipage} \\
+\midrule\noalign{}
+\endfirsthead
+\caption[]{Agrégateurs de fenêtre \emph{(suite)}}\\
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Agrégateur
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Renvoie
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Exemple d'utilisation
 \end{minipage} \\
 \midrule\noalign{}
 \endhead
@@ -1123,11 +1368,11 @@ Pour
 \texttt{AggMean} & La moyenne de la fenêtre & Une grandeur physique \\
 \texttt{AggMedian} & La médiane & Idem, quand un relevé égaré ne doit
 pas tirer le résultat \\
-\texttt{AggMin}, \texttt{AggMax} & Les extrêmes & Des enveloppes \\
+\texttt{AggMin}, \texttt{AggMax} & Les extrêmes & Mesure de composants toxiques (CO2, CO,...) \\
 \texttt{AggSum} & La somme & Une grandeur qui s'accumule : pluie,
 énergie, événements \\
 \texttt{AggFirst}, \texttt{AggLast} & Le relevé du bord, trou compris &
-Un signal d'état, un compteur \\
+Un signal d'état, un compteur, le prix d'un bien \\
 \texttt{AggFirstUsable}, \texttt{AggLastUsable} & Le relevé du bord, en
 enjambant les trous & Une grandeur physique \\
 \texttt{AggCountUsable} & Combien de relevés sont arrivés & Un rapport
@@ -1146,14 +1391,15 @@ propage. Une fenêtre vide n'atteint jamais l'agrégateur --- elle est
 recette stockée en base puisse le choisir. Un nom inconnu est une
 erreur, jamais un repli silencieux sur la moyenne.
 
-\chapter{Le regroupement calendaire}\label{chap:calendrier}
+\chapter{Regroupement calendaire}\label{chap:calendrier}
 
 \texttt{DownscaleDaily}, \texttt{DownscaleWeekly},
 \texttt{DownscaleMonthly} et \texttt{DownscaleYearly} regroupent par
 période du calendrier.
 
-\textbf{Ces méthodes servent à montrer, pas à calculer.} Les périodes
-calendaires cachent une durée variable derrière un nom familier :
+Une durée constante est satisfaisante d'un point de vue statistique, mais parfois surprenantes à lire sur un calendrier. Car dans le calendrier \textit{social} auquel
+nous sommes habitués, rien n'est constant: à part les secondes, tous nos repères habituels (jours, mois, années) sont irréguliers. D'où la nécéssité de faire des regroupements calendaires.
+
 
 \begin{itemize}
 \tightlist
@@ -1163,7 +1409,7 @@ calendaires cachent une durée variable derrière un nom familier :
 \item
   une année dure 365 ou 366 jours ;
 \item
-  une journée dure 24 heures, sauf les deux où les horloges changent.
+  une journée dure 24 heures, sauf les deux où les horloges changent (\textit{seconde intercalaire} - \textit{leap second}) .
 \end{itemize}
 
 Deux points mensuels ne pèsent donc pas la même chose. Un agrégateur qui
@@ -1174,7 +1420,7 @@ ressort plus bas pour la seule raison qu'il est plus court.
 
 \textbf{Régulariser pour calculer, regrouper en dernier, pour montrer.}
 
-\chapter{Comprimer et restituer}\label{chap:reduction}
+\chapter{Compression et restitution}\label{chap:reduction}
 
 \section{Reduce}
 
@@ -1217,7 +1463,7 @@ est légitime : un capteur qui émet toutes les dix minutes n'est pas
 perdu à la onzième. Le silence survit alors à la réduction, sans passer
 par une grille.
 
-\chapter{L'interpolation}\label{chap:interpolation}
+\chapter{Interpolation}\label{chap:interpolation}
 
 Seule opération qui invente des données : ce qui en sort est une lecture
 de ce qui s'est probablement passé, pas un relevé.
@@ -1238,12 +1484,13 @@ tout :
 Le trou est à une minute de son voisin de gauche et à cinquante-neuf de
 celui de droite. Quinze n'est pas une réponse défendable.
 
-\section{Les sept méthodes}
+\section{Sept méthodes}
 
 \begin{longtable}[]{@{}
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}@{}}
+\caption{Méthodes d'interpolation}\label{tab:interpolation}\\
 \toprule\noalign{}
 \begin{minipage}[b]{\linewidth}\raggedright
 Méthode
@@ -1296,7 +1543,7 @@ filled, err := ts.InterpolateWithin(timeseries.InterpLinear, 2*time.Hour)
 La limite se mesure entre les relevés qui encadrent le trou : elle
 signifie donc la même chose sur une série brute et sur une grille.
 
-\chapter{Les conteneurs}\label{chap:conteneurs}
+\chapter{Conteneurs}\label{chap:conteneurs}
 
 Un \texttt{TsContainer} garde les variantes d'un même signal :
 \texttt{raw}, \texttt{cleaned}, \texttt{hourly}, tout ce qu'une recette
@@ -1312,7 +1559,7 @@ appels. Remplacer une variante lui conserve son rang.
 \texttt{nil} : le premier n'a jamais été demandé, le second n'a pas pu
 être produit, et l'affichage dit lequel.
 
-\chapter{Les sorties}\label{chap:sorties}
+\chapter{Sorties}\label{chap:sorties}
 
 \section{Terminal}
 
@@ -1338,6 +1585,7 @@ plutôt que des objets.
 \begin{longtable}[]{@{}
   >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.5000}}
   >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.5000}}@{}}
+\caption{Champs de l'export JSON}\label{tab:json}\\
 \toprule\noalign{}
 \begin{minipage}[b]{\linewidth}\raggedright
 Clé
@@ -1362,11 +1610,22 @@ Tout non-nombre devient \texttt{null}, JSON n'ayant pas de NaN.
 la conversion} --- ce sont les compteurs \texttt{nbreOfNaV} et
 \texttt{nbreOfNaN} du résumé qui la transportent.
 
-\chapter{Les performances, mesurées}\label{chap:performances}
+\chapter{Performances, mesurées}\label{chap:performances}
 
-Sur un portable Apple à processeur M.
+Toutes les durées citées dans ce guide --- la table~\ref{tab:performances}
+ci-dessous, mais aussi les tables~\ref{tab:extraction}
+et~\ref{tab:chargement} --- ont été relevées sur la même machine : un
+Apple Mac mini M4 Pro, douze cœurs (huit de performance, quatre
+d'efficacité), 48 Gio de mémoire.
+
+Les valeurs absolues n'ont donc pas de portée générale. Elles dépendent
+de la machine, de la version du compilateur, et de ce que celle-ci
+faisait par ailleurs. Ce qui porte le raisonnement, ce sont les rapports
+entre elles : cinquante contre un entre une médiane et une moyenne, un
+ordre de grandeur entre \texttt{Add} et \texttt{AddBatchData}.
 
 \begin{longtable}[]{@{}ll@{}}
+\caption{Coûts mesurés, par opération}\label{tab:performances}\\
 \toprule\noalign{}
 Opération & Coût \\
 \midrule\noalign{}
@@ -1389,7 +1648,7 @@ point \\
 La croissance est linéaire jusqu'à dix millions de points pour tout ce
 qui n'est pas médiane, celles-ci portant leur \texttt{n\ log\ n}.
 
-\chapter{Venir de la version précédente}\label{chap:migration}
+\chapter{Migration depuis la version précédente}\label{chap:migration}
 
 La bibliothèque a été réécrite pour la \texttt{v0.2}. Ce qui a changé,
 et pourquoi :
@@ -1398,6 +1657,7 @@ et pourquoi :
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
   >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}@{}}
+\caption{Changements apportés par la v0.2}\label{tab:migration}\\
 \toprule\noalign{}
 \begin{minipage}[b]{\linewidth}\raggedright
 Avant
@@ -1439,12 +1699,16 @@ Pour le contrat JSON : \texttt{id} est désormais une chaîne,
 \texttt{chstd} disparaît, et \texttt{nbreOfNaV}, \texttt{chFirstUsable}
 et \texttt{valAtFirstUsable} s'ajoutent.
 
-\chapter{Où vit le raisonnement}\label{chap:raisonnement}
+\chapter{Traçabilité des décisions}\label{chap:raisonnement}
 
 Chaque décision ci-dessus est soutenue par un test qui l'énonce en
 toutes lettres et par un message de commit qui consigne pourquoi elle a
 été prise. Quand un comportement surprend, \texttt{git\ log} et
 \texttt{git\ blame} sur le fichier l'expliquent mieux que le code.
+
+% Les annexes : les exemples d'utilisation et la liste des signatures.
+% Leur code est extrait des paquets par docs/gendoc.py.
+\input{annexes}
 
 \printbibliography[heading=bibintoc, title={Bibliographie}]
 
