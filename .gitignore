@@ -32,7 +32,6 @@ Thumbs.db
 /vendor/
 
 # Les PDF et les fichiers intermédiaires de LaTeX se reconstruisent.
-GUIDE.pdf
 GUIDE.fr.pdf
 docs/*.pdf
 docs/*.aux
@@ -48,3 +47,7 @@ docs/*.fdb_latexmk
 docs/*.xdv
 
 docs/*-SAVE-ERROR
+
+# Produits par make : annexes extraites du code, liste des tables.
+docs/generated/
+docs/*.lot

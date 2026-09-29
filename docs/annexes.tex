@@ -1,0 +1,182 @@
+% Les annexes du guide.
+%
+% Le code qu'elles présentent n'est pas saisi ici : docs/gendoc.py
+% l'extrait des paquets à chaque composition, dans docs/generated/.
+% Ce fichier ne contient que la prose et l'ordre de présentation.
+%
+% Ajouter un exemple demande donc deux gestes : la fonction Example
+% dans example_test.go, et le \input correspondant ci-dessous. Si le
+% second manque, l'exemple n'est pas dans le guide ; s'il désigne un
+% exemple disparu, la composition s'arrête et le dit.
+
+\appendix
+
+\chapter{Exemples d'utilisation}\label{chap:exemples}
+
+Les exemples qui suivent ne sont pas des extraits recopiés. Ce sont des
+fonctions \texttt{Example} des deux paquets : \texttt{go\ test} les
+compile, les exécute, et compare ce qu'elles écrivent au commentaire
+\texttt{//\ Output} qui les termine. Un exemple qui ne correspond plus
+au code fait échouer les tests.
+
+C'est la seule forme de documentation qui ne puisse pas vieillir sans
+qu'on le sache, et la raison pour laquelle ce qui suit est extrait de
+\texttt{example\_test.go} au moment de composer le guide plutôt que
+saisi une fois pour toutes. Les mêmes exemples se déplient sur
+pkg.go.dev, sous la fonction qu'ils illustrent.
+
+Ils sont écrits dans le paquet de test externe : ils montrent donc
+l'import et le préfixe qu'un appelant écrit réellement, et non les
+raccourcis que seul le paquet lui-même s'autorise. Les commentaires
+sont en anglais, comme le code.
+
+Deux fonctions auxiliaires, \texttt{at} et \texttt{show}, abrègent les
+exemples de \texttt{timeseries} : la première fabrique un relevé pris
+\texttt{n} minutes après 10:00 UTC, la seconde affiche une série à
+raison d'une ligne par relevé.
+
+\section{\texttt{notavalue}}
+
+\subsection{Les trois règles sur un même calcul}
+
+Un relevé manquant est ignoré, un calcul rompu se propage, et un
+ensemble où il n'y a rien à calculer ne donne pas zéro mais rien.
+Chapitre~\ref{chap:nav}.
+
+\input{generated/exemple-notavalue-Example}
+
+\subsection{L'asymétrie de l'addition}
+
+L'addition traite le manque comme neutre, les trois autres opérations
+non. Une pluie mensuelle dont un jour n'a pas été relevé reste la pluie
+tombée ; une concentration manquante multipliée par un débit connu ne
+donne rien.
+
+\input{generated/exemple-notavalue-ExampleAdd}
+
+\subsection{Choisir la première source disponible}
+
+Un capteur principal, son secours, puis une valeur modélisée.
+\texttt{Coalesce} passe sur ce qui manque, mais pas sur une erreur : un
+calcul rompu en amont ne se répare pas en passant au plan B.
+
+\input{generated/exemple-notavalue-ExampleCoalesce}
+
+\subsection{Ce que vaut un résultat}
+
+Une moyenne ne dit pas sur combien de relevés elle repose. Les
+compteurs le disent, et distinguent les relevés absents des calculs
+rompus --- ces derniers sont à chercher en amont.
+
+\input{generated/exemple-notavalue-ExampleCountUsable}
+
+\subsection{Garder la distinction à l'écran}
+
+Les verbes de la bibliothèque standard voient les deux sentinelles
+comme des NaN et écrivent « NaN » pour l'une comme pour l'autre. Toute
+la distinction disparaît dans une ligne de journal ou un message
+d'échec de test ; \texttt{Format} la conserve.
+Chapitre~\ref{chap:sorties}.
+
+\input{generated/exemple-notavalue-ExampleFormat}
+
+\subsection{Une médiane qui n'invente pas de valeur}
+
+Sur un nombre pair de relevés, cette médiane rend la plus petite des
+deux valeurs centrales plutôt que leur moyenne. Sur une vanne codée 0
+et 1, la définition classique renverrait 0,5 --- un état que
+l'équipement n'a jamais occupé.
+
+\input{generated/exemple-notavalue-ExampleMedian}
+
+\section{\texttt{timeseries}}
+
+\subsection{Le parcours complet}
+
+Des relevés bruts à un résumé : les valeurs invraisemblables écartées,
+une grille régulière, les trous courts comblés. Les relevés sont remis
+dans n'importe quel ordre, ce qui ne coûte rien --- chapitre
+\ref{chap:serie}.
+
+\input{generated/exemple-timeseries-Example}
+
+\subsection{Un trou et une erreur ne sont pas le même accident}
+
+La première série a un relevé manquant, et garde une moyenne. La
+seconde porte le résultat d'un calcul rompu, et n'en a plus. La même
+asymétrie se lit sur la variation d'un point au suivant : un relevé de
+20 après un trou n'est pas une hausse de 20.
+Chapitre~\ref{chap:resume-stats}.
+
+\input{generated/exemple-timeseries-Example-gapVersusError}
+
+\subsection{Nettoyer, et garder ce qu'on a rejeté}
+
+Le nettoyage rend deux séries : celle qui est nettoyée et celle des
+relevés écartés, pour que la décision puisse être revue. Dans la série
+nettoyée, l'instant rejeté est toujours là --- sa mesure est devenue
+manquante, elle n'a pas disparu. Chapitre~\ref{chap:nettoyage}.
+
+\input{generated/exemple-timeseries-ExampleTimeSeries-RemoveOutbounds}
+
+\subsection{Un enregistreur qui dérive}
+
+Un enregistreur censé rapporter à l'heure juste rapporte quelques
+secondes trop tard. Sans tolérance, chacun de ces relevés tombe dans la
+fenêtre suivante, ce qui laisse une fenêtre vide et met deux relevés
+dans la suivante. Chapitre~\ref{chap:regularisation}.
+
+\input{generated/exemple-timeseries-ExampleTimeSeries-RegularizeWithTolerance}
+
+\subsection{Combler un silence court, pas une panne}
+
+La limite se mesure entre les deux relevés qui encadrent le trou, et
+non entre les pas de la grille : elle veut donc dire la même chose sur
+une série régulière et sur une série brute.
+Chapitre~\ref{chap:interpolation}.
+
+\input{generated/exemple-timeseries-ExampleTimeSeries-InterpolateWithin}
+
+\subsection{Comprimer un signal d'état, puis le restituer}
+
+Un signal qui passe son temps à ne pas bouger. \texttt{Reduce} garde
+les instants où quelque chose s'est produit, \texttt{Expand} remet la
+grille. Chapitre~\ref{chap:reduction}.
+
+\input{generated/exemple-timeseries-ExampleTimeSeries-Reduce}
+
+\subsection{Parcourir un conteneur sans allouer}
+
+Un conteneur tient les séries qui vont ensemble --- les relevés bruts,
+la version nettoyée, chaque variante produite en chemin.
+\texttt{MeasTo} est le compagnon de la boucle intérieure : on lui
+confie une tranche de longueur nulle, il la remplit au lieu d'en
+allouer une neuve, et un passage sur cent séries n'alloue qu'une fois.
+Chapitre~\ref{chap:conteneurs}.
+
+\input{generated/exemple-timeseries-ExampleTsContainer}
+
+\chapter{Référence des interfaces}\label{chap:api}
+
+Les listes qui suivent donnent, pour chaque paquet, ce qu'il exporte :
+constantes, variables, fonctions, types avec leurs champs et leurs
+méthodes. Elles sont extraites de \texttt{go\ doc\ -all} et ne peuvent
+donc décrire ni une fonction qui n'existe plus, ni oublier celle qui
+vient d'être ajoutée.
+
+Ce sont des signatures, sans les commentaires qui les accompagnent. Le
+godoc complet est sur pkg.go.dev, pour
+\href{https://pkg.go.dev/github.com/fflamingodev/notavalue}{\texttt{notavalue}}~\cite{pkgnotavalue}
+et pour
+\href{https://pkg.go.dev/usefulrisk.com/timeseries}{\texttt{timeseries}}~\cite{pkgtimeseries},
+où il est navigable et à jour de la version publiée. Le reproduire ici
+doublerait ce document pour répéter en anglais ce que les chapitres
+précédents expliquent en français.
+
+L'ordre est celui de \texttt{go\ doc} : alphabétique à l'intérieur de
+chaque rubrique, les constructeurs et les méthodes d'un type venant
+après sa déclaration.
+
+\input{generated/api-notavalue}
+
+\input{generated/api-timeseries}

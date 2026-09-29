@@ -1,61 +1,71 @@
-# Construction des guides.
+# Construction du guide.
 #
-# Deux chaînes, parce que les deux guides n'ont pas la même source.
+# docs/guide-fr.tex est la source, et la seule. latexmk en tire le PDF,
+# et docs/tex2md.py en tire README.md, la page d'accueil du dépôt et
+# celle que pkg.go.dev affiche. Ne pas modifier README.md : il est
+# écrasé à chaque génération.
 #
-#   Français : docs/guide-fr.tex est la source. latexmk en tire le PDF,
-#              et docs/tex2md.py en tire GUIDE.fr.md, que GitHub affiche.
-#              Ne pas modifier GUIDE.fr.md : il est écrasé.
+# L'ordre compte. Markdown ne sait ni numéroter, ni renvoyer, ni dresser
+# une table des matières : tex2md.py reprend tout cela de
+# docs/guide-fr.toc et docs/guide-fr.aux, que LaTeX écrit en composant.
+# Le Markdown dépend donc du PDF, et non du .tex. Si les deux ne
+# s'accordent pas sur le nombre de titres, tex2md.py s'arrête plutôt que
+# de décaler la numérotation.
 #
-#   Anglais  : GUIDE.md est la source. pandoc en tire GUIDE.pdf, avec le
-#              préambule docs/preamble.tex et le filtre docs/guide.lua.
+# Les citations du Markdown suivent docs/ieee.csl, un style numérique,
+# pour porter les mêmes numéros que la bibliographie du PDF, que
+# biblatex numérote.
 #
-#   make guides       tout
-#   make guide-fr     le PDF français et son Markdown
-#   make guide-fr-md  le Markdown français seul
-#   make guide-en     le PDF anglais
-#   make clean        efface les PDF et les fichiers de travail de LaTeX
+# Les annexes sont particulières : docs/annexes.tex porte la prose, mais
+# le code qu'elle présente est extrait des paquets par docs/gendoc.py,
+# dans docs/generated/. Ni les signatures ni les exemples ne sont saisis
+# à la main, donc ni l'un ni l'autre ne peut mentir sur l'état du code.
+#
+#   make              le PDF et le README
+#   make guide-fr     la même chose, nommément
+#   make guide-fr-md  le README seul
+#   make gendoc       les annexes extraites du code
+#   make clean        efface le PDF, les annexes extraites et les
+#                     fichiers de travail de LaTeX
 #
 # Il faut pandoc, une distribution TeX (xelatex, biber, latexmk), python3,
 # et la police Menlo pour les caractères semi-graphiques.
 
-PANDOC  := pandoc
-FLAGS   := --pdf-engine=xelatex \
-           --shift-heading-level-by=-1 \
-           --toc --toc-depth=2 --number-sections \
-           --lua-filter=docs/guide.lua \
-           --include-in-header=docs/preamble.tex \
-           -V geometry:margin=2.5cm \
-           -V monofont="Menlo" \
-           -V fontsize=11pt \
-           -V colorlinks=true -V linkcolor=black -V urlcolor=Maroon -V toccolor=black \
-           -M author="Frédéric Flament"
-
 # xelatex vit dans /Library/TeX/texbin, absent du PATH d'un shell non interactif.
 export PATH := /Library/TeX/texbin:$(PATH)
 
-.PHONY: guides guide-fr guide-fr-md guide-en clean
+# Les sources dont les annexes sont tirées : le code des deux paquets,
+# les exemples compris.
+SOURCES := $(wildcard *.go) $(wildcard ../notavalue/*.go)
 
-guides: guide-fr guide-en
+# Un témoin plutôt que la liste des fichiers produits, qui change dès
+# qu'un exemple est ajouté.
+TEMOIN := docs/generated/.a-jour
 
-guide-fr: docs/guide-fr.pdf GUIDE.fr.md
-guide-en: GUIDE.pdf
+.PHONY: guide-fr guide-fr-md gendoc clean
+
+guide-fr: docs/guide-fr.pdf README.md
+gendoc: $(TEMOIN)
+
+# Les annexes sortent de « go doc » et de example_test.go.
+$(TEMOIN): docs/gendoc.py $(SOURCES)
+	python3 docs/gendoc.py
+	@touch $@
 
 # Le guide français est écrit en LaTeX : biblatex numérote la
 # bibliographie, \ref les renvois, et la date se met à jour seule.
-docs/guide-fr.pdf: docs/guide-fr.tex docs/references.bib
+docs/guide-fr.pdf: docs/guide-fr.tex docs/annexes.tex docs/references.bib $(TEMOIN)
 	cd docs && latexmk -xelatex -interaction=nonstopmode guide-fr.tex
 	@echo "→ $@"
 
-# GUIDE.fr.md est produit, pas écrit : la source est le LaTeX.
-guide-fr-md: GUIDE.fr.md
+# README.md est produit, pas écrit : la source est le LaTeX.
+guide-fr-md: README.md
 
-GUIDE.fr.md: docs/guide-fr.tex docs/references.bib docs/tex2md.py
+# Dépend du PDF, pas du .tex : le script a besoin du .toc et du .aux que
+# latexmk vient d'écrire.
+README.md: docs/guide-fr.pdf docs/tex2md.py docs/ieee.csl go.mod
 	python3 docs/tex2md.py
 
-GUIDE.pdf: GUIDE.md docs/preamble.tex docs/guide.lua
-	$(PANDOC) $< -o $@ $(FLAGS) -V lang=en
-	@echo "→ $@"
-
 clean:
-	rm -f GUIDE.pdf
+	rm -rf docs/generated
 	cd docs && latexmk -C guide-fr.tex
