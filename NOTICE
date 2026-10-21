@@ -14,8 +14,8 @@ Copyright (c) 2025-2026 Frédéric Flament.
 Except for the file named in section 3, everything in this repository is
 source code under the MIT License, as set out in LICENSE. That includes
 the Go packages and their tests, the example functions in
-example_test.go, the build scripts under docs/ (gendoc.py and tex2md.py)
-and the Makefile.
+example_test.go, the build scripts under docs/ (gendoc.py and tex2md.py),
+the Makefile and README.md.
 
 
 2. The guide — all rights reserved
@@ -25,7 +25,7 @@ Copyright (c) 2026 Frédéric Flament. All rights reserved.
 
 The guide is a separate work and is NOT licensed under the MIT License:
 
-    README.md, which is the guide itself
+    docs/GUIDE.fr.md
     docs/guide-fr.tex
     docs/annexes.tex
     docs/references.bib
@@ -82,7 +82,7 @@ Copyright (c) 2025-2026 Frédéric Flament.
 À l'exception du fichier nommé à la section 3, tout ce dépôt est du code
 source sous licence MIT, telle qu'énoncée dans LICENSE : les paquets Go
 et leurs tests, les fonctions Example de example_test.go, les scripts de
-construction de docs/ (gendoc.py, tex2md.py) et le Makefile.
+construction de docs/ (gendoc.py, tex2md.py), le Makefile et README.md.
 
 
 2. Le guide — tous droits réservés
@@ -92,7 +92,7 @@ Copyright (c) 2026 Frédéric Flament. Tous droits réservés.
 
 Le guide est une œuvre séparée et n'est PAS sous licence MIT :
 
-    README.md, qui est le guide lui-même
+    docs/GUIDE.fr.md
     docs/guide-fr.tex
     docs/annexes.tex
     docs/references.bib

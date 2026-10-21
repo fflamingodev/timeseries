@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Produit README.md à partir de docs/guide-fr.tex.
+"""Produit docs/GUIDE.fr.md à partir de docs/guide-fr.tex.
 
 Le LaTeX est la source du guide français ; ce script en tire la version
 que GitHub sait afficher. Markdown ne sait ni numéroter, ni renvoyer, ni
@@ -22,7 +22,7 @@ Ce qu'il fait, dans l'ordre :
      bibliographie.
 
 Il lui faut donc le .toc et le .aux, c'est-à-dire un PDF déjà construit.
-Le Makefile s'en charge : README.md dépend de docs/guide-fr.pdf.
+Le Makefile s'en charge : le guide dépend de docs/guide-fr.pdf.
 
 Usage : python3 docs/tex2md.py  (depuis la racine du dépôt)
 """
@@ -35,7 +35,7 @@ TEX = "docs/guide-fr.tex"
 AUX = "docs/guide-fr.aux"
 TOC = "docs/guide-fr.toc"
 CSL = "ieee.csl"          # relatif à docs/, où pandoc est lancé
-MD = "README.md"
+MD = "docs/GUIDE.fr.md"
 
 # Le décalage de pandoc : un \chapter devient ##, une \section ###, une
 # \subsection ####.

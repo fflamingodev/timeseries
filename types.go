@@ -44,6 +44,12 @@ func IsNaDuration(d time.Duration) bool {
 // separated from its instant is no longer a measurement, and time.Time
 // is the type every Go developer already knows how to handle — time
 // zones, formatting, comparison.
+//
+// The measurement is a float64, an IEEE 754 double. It has the
+// well-known pitfalls — sums that depend on their order, values that
+// make poor map keys, conversions to and from text that are not always
+// exact — but it is the most practical type to handle, and for any
+// practical purpose it is efficient.
 type Datum struct {
 	Chron time.Time
 	Meas  float64

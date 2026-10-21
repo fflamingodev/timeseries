@@ -44,7 +44,7 @@ TEMOIN := docs/generated/.a-jour
 
 .PHONY: guide-fr guide-fr-md gendoc clean
 
-guide-fr: docs/guide-fr.pdf README.md
+guide-fr: docs/guide-fr.pdf docs/GUIDE.fr.md
 gendoc: $(TEMOIN)
 
 # Les annexes sortent de « go doc » et de example_test.go.
@@ -58,12 +58,13 @@ docs/guide-fr.pdf: docs/guide-fr.tex docs/annexes.tex docs/references.bib $(TEMO
 	cd docs && latexmk -xelatex -interaction=nonstopmode guide-fr.tex
 	@echo "→ $@"
 
-# README.md est produit, pas écrit : la source est le LaTeX.
-guide-fr-md: README.md
+# docs/GUIDE.fr.md est produit, pas écrit : la source est le LaTeX.
+# README.md, lui, est écrit à la main et ne bouge pas.
+guide-fr-md: docs/GUIDE.fr.md
 
 # Dépend du PDF, pas du .tex : le script a besoin du .toc et du .aux que
 # latexmk vient d'écrire.
-README.md: docs/guide-fr.pdf docs/tex2md.py docs/ieee.csl go.mod
+docs/GUIDE.fr.md: docs/guide-fr.pdf docs/tex2md.py docs/ieee.csl go.mod
 	python3 docs/tex2md.py
 
 clean:
