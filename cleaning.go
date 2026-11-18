@@ -209,6 +209,14 @@ func (ts *TimeSeries) usableMeas() []float64 {
 // Gaps and broken values are never submitted to reject: there is
 // nothing to judge in the first, and the second is a problem of its own.
 func (ts *TimeSeries) split(reject func(float64) bool, how string) (cleaned, rejected *TimeSeries, err error) {
+	return ts.splitAt(func(_ int, v float64) bool { return reject(v) }, how)
+}
+
+// splitAt is split for the rules that need to see past the reading
+// itself: reject receives the index of the point in the series as well
+// as its value, so it can look at the neighbors. The judgment is made on
+// the original series, never on the one being cleaned.
+func (ts *TimeSeries) splitAt(reject func(i int, v float64) bool, how string) (cleaned, rejected *TimeSeries, err error) {
 	cleaned = NewTimeSeries(ts.Name + " cleaned")
 	cleaned.ID = ts.ID
 	cleaned.Comment = how
@@ -219,11 +227,11 @@ func (ts *TimeSeries) split(reject func(float64) bool, how string) (cleaned, rej
 	keep := make([]Datum, 0, ts.Len())
 	out := make([]Datum, 0, 8)
 
-	ts.Range(func(_ int, du DataUnit) bool {
+	ts.Range(func(i int, du DataUnit) bool {
 		switch {
 		case math.IsNaN(du.Meas): // a gap or a broken value: left as it is
 			keep = append(keep, du.Datum)
-		case reject(du.Meas):
+		case reject(i, du.Meas):
 			keep = append(keep, NewDatum(du.Chron, nav.NaV))
 			out = append(out, du.Datum)
 		default:

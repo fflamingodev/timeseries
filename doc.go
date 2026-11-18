@@ -63,8 +63,10 @@
 //
 // Clean: [TimeSeries.RemoveOutbounds] on fixed bounds,
 // [TimeSeries.RemovePercentileOutliers] on percentile fences,
-// [TimeSeries.RemoveZScoreOutliers] on a standard deviation, and
-// [TimeSeries.RemovePeirceOutliers] on Peirce's criterion. Each returns
+// [TimeSeries.RemoveZScoreOutliers] on a standard deviation,
+// [TimeSeries.RemovePeirceOutliers] on Peirce's criterion, and
+// [TimeSeries.RemoveStrayPoints] or [TimeSeries.RemoveStrayPointsPercent]
+// on single readings that jump away and straight back. Each returns
 // the cleaned series and the readings it rejected, so the decision can
 // be reviewed.
 //

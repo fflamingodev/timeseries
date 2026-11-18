@@ -150,6 +150,39 @@ func ExampleTimeSeries_RemoveOutbounds() {
 	//   11:00:00  21
 }
 
+// A window opened for a few minutes: one reading drops, the next one is
+// back. The 4 °C is not implausible in itself, so no outlier fence would
+// catch it; what gives it away is the jump down and straight back up.
+// The 9 °C at the end stays: the room cooled down and stayed cool.
+func ExampleTimeSeries_RemoveStrayPoints() {
+	ts := timeseries.NewTimeSeries("living room")
+	ts.AddBatchData([]timeseries.Datum{
+		at(0, 20.1), at(10, 20.3), at(20, 4), at(30, 19.8),
+		at(40, 20), at(50, 9), at(60, 9.2),
+	})
+
+	cleaned, rejected, err := ts.RemoveStrayPoints(5, timeseries.StrayDown)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("cleaned:")
+	show(cleaned)
+	fmt.Println("rejected:")
+	show(rejected)
+
+	// Output:
+	// cleaned:
+	//   10:00:00  20.1
+	//   10:10:00  20.3
+	//   10:20:00  NaV
+	//   10:30:00  19.8
+	//   10:40:00  20
+	//   10:50:00  9
+	//   11:00:00  9.2
+	// rejected:
+	//   10:20:00  4
+}
+
 // A logger meant to report on the hour that reports a few seconds
 // late. Without a tolerance every such reading lands in the next
 // window, which leaves one window empty and the next one holding two
